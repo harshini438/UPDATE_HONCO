@@ -1,0 +1,63 @@
+# Credentials — nothing here is ever safe to commit.
+*ADMIN-CREDENTIALS*
+*MEET-CREDENTIALS*
+.admin-token
+.cmd-token
+.team-id
+meetsvc.env
+chat.env
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+google-services.json
+GoogleService-Info.plist
+.credentials.json
+
+# The Jitsi .env holds every prosody / jicofo / jvb / jibri password.
+.env
+.env.*
+!.env.example
+
+# Live config that differs per host.
+engine.conf
+public-url.txt
+meet-schedule.json
+
+# Vendor source — re-cloned from upstream, never vendored here.
+server/
+mobile/
+push-proxy/
+whisper.cpp/
+honco-meet/docker-compose.yml
+node_modules/
+
+# Build output and runtime state.
+build/
+dist/
+*.apk
+*.aab
+pgdata/
+pgsock/
+storage/
+logs/
+state/
+run/
+models/
+vixy-stt-model/
+vixy-venv/
+web-backgrounds/
+*.bin
+*.onnx
+
+# Recordings and anything derived from them are meeting content, not code.
+*.mp4
+*.wav
+*.vtt
+*.notes.md
+
+__pycache__/
+*.pyc
+*.log
+*.tmp

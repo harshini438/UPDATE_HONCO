@@ -1,0 +1,4 @@
+# Speech-to-text engine for meeting recordings.
+#   whisper  whisper.cpp + large-v3-turbo on the GPU  (default)
+#   vixy     the in-house Vixy model (faster-whisper); switch when it is trained
+STT_ENGINE=whisper

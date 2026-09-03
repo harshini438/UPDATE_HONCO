@@ -1,0 +1,26 @@
+# honco.in DNS export  (2026-09-02 22:04 UTC)
+# Queried authoritatively from ns75.domaincontrol.com before any nameserver change.
+
+## Apex records
+SOA:  
+    honco.in.		3600	IN	SOA	ns75.domaincontrol.com. dns.jomax.net. 2026072700 28800 7200 604800 600
+NS:   
+    honco.in.		3600	IN	NS	ns75.domaincontrol.com.
+    honco.in.		3600	IN	NS	ns76.domaincontrol.com.
+A:    
+    honco.in.		600	IN	A	13.127.206.154
+AAAA: 
+MX:   
+    honco.in.		3600	IN	MX	0 smtp.secureserver.net.
+    honco.in.		3600	IN	MX	10 mailstore1.secureserver.net.
+TXT:  
+    honco.in.		3600	IN	TXT	"v=spf1 include:secureserver.net -all"
+CAA:  
+
+## Known mail / policy records
+    _dmarc.honco.in TXT
+        "v=DMARC1; p=reject; rua=mailto:dmarc_rua@onsecureserver.net; adkim=r; aspf=r;"
+    _autodiscover._tcp.honco.in SRV -> 0 0 443 autodiscover.secureserver.net.
+
+## Subdomain sweep (A / CNAME)
+    www.honco.in            A 13.127.206.154 

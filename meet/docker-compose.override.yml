@@ -1,0 +1,4 @@
+services:
+  web:
+    volumes:
+      - ${CONFIG}/web-backgrounds:/usr/share/jitsi-meet/images/honco-backgrounds:ro

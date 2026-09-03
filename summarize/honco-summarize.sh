@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Honco Meet -- summarise a meeting transcript.
+#
+# Reads a transcript on stdin, writes meeting notes on stdout.
+#
+# This runs on mother because that is where the Claude CLI is authenticated.
+# ubuntu-3 reaches it over SSH with a key that is PINNED TO THIS SCRIPT via a
+# forced command in authorized_keys -- that key cannot get a shell, forward a
+# port, or run anything else. It is not a general login to this box.
+set -uo pipefail
+
+# A forced-command SSH session gets a minimal PATH with no ~/.local/bin, so the
+# CLI must be addressed absolutely. HOME is set explicitly for the same reason:
+# the CLI reads its credentials from there.
+export HOME=/home/database
+CLAUDE=/home/database/.local/bin/claude
+
+MAX_CHARS="${MAX_CHARS:-120000}"
+LOG=/home/database/honco-summarize.log
+
+transcript=$(cat)
+
+if [ -z "${transcript// }" ]; then
+    echo "(empty transcript -- nothing to summarise)"
+    exit 0
+fi
+
+# A long meeting can exceed a sensible single request. Truncate rather than
+# fail, and say so in the output so nobody mistakes a partial summary for a
+# complete one.
+truncated=""
+if [ "${#transcript}" -gt "$MAX_CHARS" ]; then
+    transcript="${transcript:0:$MAX_CHARS}"
+    truncated=$'\n\n_(Transcript was truncated for length; this covers the earlier part of the meeting.)_'
+fi
+
+printf '%s summarise: %d chars\n' "$(date -Is)" "${#transcript}" >> "$LOG"
+
+PROMPT='You are writing meeting notes for an internal engineering and sales team at Honco (products: HomeLead, JustSell, GemSetu).
+
+The transcript below is machine-generated from meeting audio, so expect garbled proper nouns, missing punctuation, and occasional wrong words. Read through those errors rather than quoting them.
+
+Write, in this order and nothing else:
+
+## Summary
+Two or three sentences on what the meeting was actually about.
+
+## Decisions
+Bullet list. Only things that were actually decided. If none, write "None recorded."
+
+## Action items
+Bullet list, each as "Owner — what — when". Use the name as spoken. If an owner or date was not stated, write "unassigned" or "no date" rather than guessing. If none, write "None recorded."
+
+## Open questions
+Bullet list of things raised but not resolved. Omit this section entirely if there are none.
+
+Be terse. Do not invent anything that is not in the transcript. Do not add a preamble or a closing remark.'
+
+if ! out=$(printf '%s\n\n---TRANSCRIPT---\n%s\n' "$PROMPT" "$transcript" \
+           | timeout 300 "$CLAUDE" -p 2>>"$LOG"); then
+    echo "(summary failed -- the transcript is still on disk)"
+    printf '%s summarise FAILED\n' "$(date -Is)" >> "$LOG"
+    exit 1
+fi
+
+printf '%s%s\n' "$out" "$truncated"
+printf '%s summarise ok: %d chars out\n' "$(date -Is)" "${#out}" >> "$LOG"
