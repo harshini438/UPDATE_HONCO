@@ -27,15 +27,6 @@
         {value: 'done', label: 'Done'},
     ];
 
-    function statusLabel(v) {
-        for (var i = 0; i < STATUSES.length; i++) {
-            if (STATUSES[i].value === v) {
-                return STATUSES[i].label;
-            }
-        }
-        return v;
-    }
-
     // All requests go through the browser session -- the same cookie the
     // rest of the webapp uses. The plugin never sees a token from here,
     // and the server resolves identity from the session, not from
@@ -72,23 +63,258 @@
 
     // --- Task row ----------------------------------------------------------
 
+    // --- Team members (for the assignee picker) ----------------------------
+
+    // Read through Mattermost's own users API, on the caller's session.
+    //
+    // That matters: the server decides which profiles this user may see, so
+    // the picker cannot list people from a team they are not in. The plugin
+    // does not need -- and deliberately does not add -- an endpoint of its
+    // own for this.
+    //
+    // Nothing here is authorization. The backend re-checks that an assignee
+    // is a member of the task's team on every create and update; this list
+    // only stops the UI offering choices that would be rejected.
+    function fetchTeamMembers(teamId) {
+        if (!teamId) {
+            return Promise.resolve([]);
+        }
+        return fetch('/api/v4/users?in_team=' + encodeURIComponent(teamId) +
+                     '&per_page=200&active=true', {
+            credentials: 'same-origin',
+            headers: {'X-Requested-With': 'XMLHttpRequest'},
+        }).then(function (res) {
+            if (!res.ok) {
+                return [];
+            }
+            return res.json();
+        }).then(function (users) {
+            return (users || []).filter(function (u) {
+                // Bots are not people to assign work to.
+                return !u.is_bot && u.delete_at === 0;
+            }).sort(function (a, b) {
+                return (a.username || '').localeCompare(b.username || '');
+            });
+        }).catch(function () {
+            return [];
+        });
+    }
+
+    function memberLabel(u) {
+        if (!u) {
+            return '';
+        }
+        var full = [u.first_name, u.last_name].filter(Boolean).join(' ').trim();
+        return full ? full + ' (@' + u.username + ')' : '@' + u.username;
+    }
+
+    // --- shared styles -----------------------------------------------------
+
+    var INPUT = {
+        width: '100%',
+        boxSizing: 'border-box',
+        padding: '6px 8px',
+        marginBottom: 6,
+        borderRadius: 4,
+        border: '1px solid rgba(var(--center-channel-color-rgb), 0.24)',
+        background: 'var(--center-channel-bg)',
+        color: 'var(--center-channel-color)',
+        fontSize: 13,
+    };
+    var BTN = {
+        background: 'var(--button-bg)',
+        color: 'var(--button-color)',
+        border: 'none',
+        borderRadius: 4,
+        padding: '6px 14px',
+        fontSize: 13,
+        fontWeight: 600,
+        cursor: 'pointer',
+    };
+    var LINKBTN = {
+        background: 'none',
+        border: 'none',
+        padding: 0,
+        fontSize: 12,
+        color: 'var(--link-color)',
+        cursor: 'pointer',
+    };
+
+    // --- Task editor (create and edit share one form) ----------------------
+
+    // One component for both so a field can never exist on create and go
+    // missing on edit -- which is exactly how the assignee got lost before.
+    function TaskEditor(props) {
+        var init = props.task || {};
+        var f = React.useState({
+            title: init.title || '',
+            description: init.description || '',
+            assignee_id: init.assignee_id || '',
+            status: init.status || 'todo',
+            due: init.due_at ? new Date(init.due_at).toISOString().slice(0, 10) : '',
+        });
+        var form = f[0];
+        var setForm = f[1];
+
+        var s = React.useState({saving: false, error: null});
+        var state = s[0];
+        var setState = s[1];
+
+        function set(key, value) {
+            var next = {};
+            next[key] = value;
+            setForm(Object.assign({}, form, next));
+        }
+
+        function submit(ev) {
+            ev.preventDefault();
+            if (!form.title.trim()) {
+                setState({saving: false, error: 'A title is required.'});
+                return;
+            }
+            setState({saving: true, error: null});
+
+            var payload = {
+                title: form.title.trim(),
+                description: form.description,
+                // Sent even when empty: "" is how the API clears an
+                // assignment, and the backend accepts it explicitly.
+                assignee_id: form.assignee_id,
+                due_at: form.due ? new Date(form.due + 'T12:00:00').getTime() : 0,
+            };
+            if (props.task) {
+                payload.status = form.status;
+            }
+
+            props.onSave(payload).then(function () {
+                setState({saving: false, error: null});
+            }).catch(function (err) {
+                // Show what the server said -- validation messages here are
+                // the useful ones ("assignee is not a member of this team").
+                setState({saving: false, error: err.message || 'Could not save.'});
+            });
+        }
+
+        return e('form', {
+            onSubmit: submit,
+            style: {
+                padding: '10px 12px',
+                borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.12)',
+                background: 'rgba(var(--center-channel-color-rgb), 0.03)',
+            },
+        }, [
+            e('input', {
+                key: 'title',
+                style: INPUT,
+                placeholder: 'Task title',
+                'aria-label': 'Task title',
+                value: form.title,
+                maxLength: 256,
+                onChange: function (ev) {
+                    set('title', ev.target.value);
+                },
+            }),
+            e('textarea', {
+                key: 'desc',
+                style: Object.assign({}, INPUT, {minHeight: 54, resize: 'vertical'}),
+                placeholder: 'Description (optional)',
+                'aria-label': 'Task description',
+                value: form.description,
+                onChange: function (ev) {
+                    set('description', ev.target.value);
+                },
+            }),
+            e('select', {
+                key: 'assignee',
+                style: INPUT,
+                'aria-label': 'Assignee',
+                value: form.assignee_id,
+                onChange: function (ev) {
+                    set('assignee_id', ev.target.value);
+                },
+            }, [e('option', {key: '', value: ''}, 'Unassigned')].concat(
+                (props.members || []).map(function (u) {
+                    return e('option', {key: u.id, value: u.id}, memberLabel(u));
+                }),
+            )),
+            props.task ? e('select', {
+                key: 'status',
+                style: INPUT,
+                'aria-label': 'Status',
+                value: form.status,
+                onChange: function (ev) {
+                    set('status', ev.target.value);
+                },
+            }, STATUSES.map(function (s2) {
+                return e('option', {key: s2.value, value: s2.value}, s2.label);
+            })) : null,
+            e('input', {
+                key: 'due',
+                style: INPUT,
+                type: 'date',
+                'aria-label': 'Due date',
+                value: form.due,
+                onChange: function (ev) {
+                    set('due', ev.target.value);
+                },
+            }),
+
+            state.error ? e('div', {
+                key: 'err',
+                style: {color: 'var(--error-text)', fontSize: 12, marginBottom: 6},
+            }, state.error) : null,
+
+            e('div', {key: 'actions', style: {display: 'flex', gap: 8, flexWrap: 'wrap'}}, [
+                e('button', {
+                    key: 'save',
+                    type: 'submit',
+                    disabled: state.saving || !form.title.trim(),
+                    style: Object.assign({}, BTN, {
+                        opacity: (state.saving || !form.title.trim()) ? 0.6 : 1,
+                    }),
+                }, state.saving ? 'Saving…' : (props.task ? 'Save changes' : 'Create task')),
+                e('button', {
+                    key: 'cancel',
+                    type: 'button',
+                    onClick: props.onCancel,
+                    style: Object.assign({}, BTN, {
+                        background: 'transparent',
+                        color: 'var(--center-channel-color)',
+                        border: '1px solid rgba(var(--center-channel-color-rgb), 0.24)',
+                    }),
+                }, 'Cancel'),
+            ]),
+        ]);
+    }
+
+    // --- Task row ----------------------------------------------------------
+
     function TaskRow(props) {
         var t = props.task;
         var overdue = t.due_at > 0 && t.due_at < Date.now() && t.status !== 'done';
+
+        var c = React.useState(false);
+        var confirming = c[0];
+        var setConfirming = c[1];
+
+        var assignee = props.members.filter(function (u) {
+            return u.id === t.assignee_id;
+        })[0];
 
         return e('div', {
             style: {
                 padding: '10px 12px',
                 borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.08)',
-                opacity: t.status === 'done' ? 0.6 : 1,
             },
         }, [
             e('div', {
                 key: 'title',
                 style: {
+                    fontSize: 13,
                     fontWeight: 600,
-                    marginBottom: 4,
+                    color: 'var(--center-channel-color)',
                     textDecoration: t.status === 'done' ? 'line-through' : 'none',
+                    opacity: t.status === 'done' ? 0.7 : 1,
                     wordBreak: 'break-word',
                 },
             }, t.title),
@@ -98,7 +324,7 @@
                 style: {
                     fontSize: 12,
                     color: 'rgba(var(--center-channel-color-rgb), 0.72)',
-                    marginBottom: 6,
+                    marginTop: 2,
                     whiteSpace: 'pre-wrap',
                     wordBreak: 'break-word',
                 },
@@ -106,7 +332,28 @@
 
             e('div', {
                 key: 'meta',
-                style: {display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12},
+                style: {
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    gap: 8,
+                    marginTop: 6,
+                    fontSize: 11,
+                    color: 'rgba(var(--center-channel-color-rgb), 0.64)',
+                },
+            }, [
+                e('span', {key: 'as'}, t.assignee_id
+                    ? (assignee ? memberLabel(assignee) : 'Assigned')
+                    : 'Unassigned'),
+                t.due_at ? e('span', {
+                    key: 'due',
+                    style: {color: overdue ? 'var(--error-text)' : 'inherit'},
+                }, (overdue ? 'Overdue · ' : 'Due ') + formatDue(t.due_at)) : null,
+            ]),
+
+            e('div', {
+                key: 'actions',
+                style: {display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 8},
             }, [
                 e('select', {
                     key: 'status',
@@ -117,71 +364,89 @@
                     },
                     style: {
                         fontSize: 12,
-                        padding: '2px 6px',
+                        padding: '3px 6px',
                         borderRadius: 4,
-                        border: '1px solid rgba(var(--center-channel-color-rgb), 0.24)',
                         background: 'var(--center-channel-bg)',
                         color: 'var(--center-channel-color)',
+                        border: '1px solid rgba(var(--center-channel-color-rgb), 0.24)',
                     },
                 }, STATUSES.map(function (s) {
                     return e('option', {key: s.value, value: s.value}, s.label);
                 })),
 
-                t.assignee_id ? e('span', {
-                    key: 'assignee',
-                    style: {color: 'rgba(var(--center-channel-color-rgb), 0.72)'},
-                }, '@' + (props.usernames[t.assignee_id] || 'unknown')) : e('span', {
-                    key: 'assignee',
-                    style: {color: 'rgba(var(--center-channel-color-rgb), 0.56)'},
-                }, 'unassigned'),
-
-                t.due_at ? e('span', {
-                    key: 'due',
-                    style: {color: overdue ? 'var(--error-text)' : 'rgba(var(--center-channel-color-rgb), 0.72)'},
-                }, (overdue ? 'Overdue: ' : 'Due: ') + formatDue(t.due_at)) : null,
-
-                props.canDelete ? e('button', {
-                    key: 'del',
+                props.canEdit ? e('button', {
+                    key: 'edit',
+                    style: LINKBTN,
                     onClick: function () {
-                        props.onDelete(t.id);
+                        props.onEdit(t);
                     },
-                    title: 'Delete task',
-                    style: {
-                        marginLeft: 'auto',
-                        background: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        color: 'rgba(var(--center-channel-color-rgb), 0.56)',
-                        fontSize: 14,
-                        padding: '0 4px',
+                }, 'Edit') : null,
+
+                // Deleting is destructive and the row is small, so the
+                // confirmation happens in place rather than in a dialog
+                // that would cover the list.
+                props.canDelete ? (confirming ? e('span', {
+                    key: 'confirm',
+                    style: {display: 'inline-flex', gap: 8, alignItems: 'center'},
+                }, [
+                    e('span', {key: 'q', style: {fontSize: 11}}, 'Delete?'),
+                    e('button', {
+                        key: 'yes',
+                        style: Object.assign({}, LINKBTN, {color: 'var(--error-text)', fontWeight: 600}),
+                        onClick: function () {
+                            setConfirming(false);
+                            props.onDelete(t.id);
+                        },
+                    }, 'Yes'),
+                    e('button', {
+                        key: 'no',
+                        style: LINKBTN,
+                        onClick: function () {
+                            setConfirming(false);
+                        },
+                    }, 'No'),
+                ]) : e('button', {
+                    key: 'del',
+                    style: Object.assign({}, LINKBTN, {color: 'var(--error-text)'}),
+                    onClick: function () {
+                        setConfirming(true);
                     },
-                }, '×') : null,
+                }, 'Delete')) : null,
             ]),
         ]);
     }
 
     // --- The right-hand sidebar panel --------------------------------------
 
+    var PAGE_SIZE = 20;
+
     function TasksPanel() {
         var st = React.useState({tasks: [], loading: true, error: null});
         var state = st[0];
         var setState = st[1];
 
-        var f = React.useState({title: '', assignee: '', due: '', open: false});
-        var form = f[0];
-        var setForm = f[1];
-
-        var fl = React.useState('all');
+        // Filters are applied by the SERVER, not by trimming an already
+        // fetched page. Filtering a page in the browser would make paging
+        // lie: page 2 of "assigned to me" would be page 2 of everything,
+        // with most of it thrown away.
+        var fl = React.useState({status: '', mine: false});
         var filter = fl[0];
         var setFilter = fl[1];
 
-        var m = React.useState({teamId: null, userId: null, usernames: {}});
+        var pg = React.useState(0);
+        var page = pg[0];
+        var setPage = pg[1];
+
+        var m = React.useState({teamId: null, userId: null, members: []});
         var ctx = m[0];
         var setCtx = m[1];
 
-        // Team and user come from the webapp's own store via its public
-        // API, so the panel always shows the team the user is actually
-        // looking at.
+        var ed = React.useState({creating: false, editing: null});
+        var editor = ed[0];
+        var setEditor = ed[1];
+
+        // Team and user come from the webapp's own store, so the panel
+        // always shows the team the user is actually looking at.
         React.useEffect(function () {
             var teamId = null;
             var userId = null;
@@ -191,26 +456,36 @@
                     var s = store.getState();
                     teamId = s.entities.teams.currentTeamId;
                     userId = s.entities.users.currentUserId;
-                    var profiles = s.entities.users.profiles || {};
-                    var names = {};
-                    Object.keys(profiles).forEach(function (id) {
-                        names[id] = profiles[id].username;
-                    });
-                    setCtx({teamId: teamId, userId: userId, usernames: names});
                 }
             } catch (err) {
-                setCtx({teamId: null, userId: null, usernames: {}});
+                teamId = null;
+            }
+            setCtx({teamId: teamId, userId: userId, members: []});
+            if (teamId) {
+                fetchTeamMembers(teamId).then(function (members) {
+                    setCtx(function (prev) {
+                        return {teamId: teamId, userId: userId, members: members};
+                    });
+                });
             }
         }, []);
 
-        var load = React.useCallback(function (teamId) {
+        var load = React.useCallback(function (teamId, pageNum, f, userId) {
             if (!teamId) {
                 return;
             }
             setState(function (p) {
                 return {tasks: p.tasks, loading: true, error: null};
             });
-            request('GET', '/tasks?team_id=' + encodeURIComponent(teamId)).then(function (data) {
+            var q = '/tasks?team_id=' + encodeURIComponent(teamId) +
+                    '&limit=' + PAGE_SIZE + '&page=' + pageNum;
+            if (f.status) {
+                q += '&status=' + encodeURIComponent(f.status);
+            }
+            if (f.mine && userId) {
+                q += '&assignee_id=' + encodeURIComponent(userId);
+            }
+            request('GET', q).then(function (data) {
                 setState({tasks: (data && data.tasks) || [], loading: false, error: null});
             }).catch(function (err) {
                 setState({tasks: [], loading: false, error: err.message});
@@ -218,75 +493,74 @@
         }, []);
 
         React.useEffect(function () {
-            load(ctx.teamId);
-        }, [ctx.teamId, load]);
+            load(ctx.teamId, page, filter, ctx.userId);
+        }, [ctx.teamId, ctx.userId, page, filter, load]);
 
-        function submit(ev) {
-            ev.preventDefault();
-            if (!form.title.trim() || !ctx.teamId) {
-                return;
-            }
-            var payload = {team_id: ctx.teamId, title: form.title.trim()};
-            if (form.assignee) {
-                payload.assignee_id = form.assignee;
-            }
-            if (form.due) {
-                payload.due_at = new Date(form.due + 'T12:00:00').getTime();
-            }
-            request('POST', '/tasks', payload).then(function () {
-                setForm({title: '', assignee: '', due: '', open: false});
-                load(ctx.teamId);
-            }).catch(function (err) {
-                setState(function (p) {
-                    return {tasks: p.tasks, loading: false, error: err.message};
-                });
+        function reload() {
+            load(ctx.teamId, page, filter, ctx.userId);
+        }
+
+        function changeFilter(next) {
+            // A filter change invalidates the current page number.
+            setPage(0);
+            setFilter(next);
+        }
+
+        function createTask(payload) {
+            payload.team_id = ctx.teamId;
+            return request('POST', '/tasks', payload).then(function () {
+                setEditor({creating: false, editing: null});
+                setPage(0);
+                load(ctx.teamId, 0, filter, ctx.userId);
+            });
+        }
+
+        function saveTask(id, payload) {
+            return request('PATCH', '/tasks/' + id, payload).then(function () {
+                setEditor({creating: false, editing: null});
+                reload();
             });
         }
 
         function setStatus(id, status) {
-            request('PUT', '/tasks/' + id + '/status', {status: status}).then(function () {
-                load(ctx.teamId);
-            }).catch(function (err) {
-                setState(function (p) {
-                    return {tasks: p.tasks, loading: false, error: err.message};
+            request('PUT', '/tasks/' + id + '/status', {status: status})
+                .then(reload)
+                .catch(function (err) {
+                    setState(function (p) {
+                        return {tasks: p.tasks, loading: false, error: err.message};
+                    });
                 });
-            });
         }
 
         function remove(id) {
-            request('DELETE', '/tasks/' + id).then(function () {
-                load(ctx.teamId);
-            }).catch(function (err) {
-                setState(function (p) {
-                    return {tasks: p.tasks, loading: false, error: err.message};
+            request('DELETE', '/tasks/' + id)
+                .then(reload)
+                .catch(function (err) {
+                    setState(function (p) {
+                        return {tasks: p.tasks, loading: false, error: err.message};
+                    });
                 });
-            });
         }
 
-        var shown = state.tasks.filter(function (t) {
-            if (filter === 'mine') {
-                return t.assignee_id === ctx.userId;
-            }
-            if (filter === 'open') {
-                return t.status !== 'done';
-            }
-            return true;
-        });
+        // The list endpoint returns no total, so "is there a next page" is
+        // inferred from getting a full page back. On an exact boundary that
+        // offers a Next which lands on an empty page -- handled below with
+        // an explicit empty state rather than a silent dead end.
+        var hasNext = state.tasks.length === PAGE_SIZE;
+        var hasPrev = page > 0;
+        var first = page * PAGE_SIZE;
 
-        var inputStyle = {
-            width: '100%',
-            padding: '6px 8px',
-            marginBottom: 6,
+        var selectStyle = {
+            fontSize: 12,
+            padding: '3px 6px',
             borderRadius: 4,
-            border: '1px solid rgba(var(--center-channel-color-rgb), 0.24)',
             background: 'var(--center-channel-bg)',
             color: 'var(--center-channel-color)',
-            fontSize: 13,
+            border: '1px solid rgba(var(--center-channel-color-rgb), 0.24)',
         };
 
         return e('div', {style: {display: 'flex', flexDirection: 'column', height: '100%'}}, [
 
-            // Filters + new-task toggle
             e('div', {
                 key: 'bar',
                 style: {
@@ -295,82 +569,66 @@
                     display: 'flex',
                     gap: 6,
                     alignItems: 'center',
+                    flexWrap: 'wrap',
                 },
             }, [
                 e('select', {
-                    key: 'filter',
-                    value: filter,
-                    'aria-label': 'Filter tasks',
+                    key: 'status',
+                    value: filter.status,
+                    'aria-label': 'Filter by status',
                     onChange: function (ev) {
-                        setFilter(ev.target.value);
+                        changeFilter({status: ev.target.value, mine: filter.mine});
                     },
-                    style: {fontSize: 12, padding: '3px 6px', borderRadius: 4, background: 'var(--center-channel-bg)', color: 'var(--center-channel-color)', border: '1px solid rgba(var(--center-channel-color-rgb), 0.24)'},
+                    style: selectStyle,
+                }, [e('option', {key: 'all', value: ''}, 'All statuses')].concat(
+                    STATUSES.map(function (s) {
+                        return e('option', {key: s.value, value: s.value}, s.label);
+                    }),
+                )),
+                e('label', {
+                    key: 'mine',
+                    style: {fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4},
                 }, [
-                    e('option', {key: 'all', value: 'all'}, 'All tasks'),
-                    e('option', {key: 'open', value: 'open'}, 'Open'),
-                    e('option', {key: 'mine', value: 'mine'}, 'Assigned to me'),
+                    e('input', {
+                        key: 'cb',
+                        type: 'checkbox',
+                        checked: filter.mine,
+                        'aria-label': 'Assigned to me',
+                        onChange: function (ev) {
+                            changeFilter({status: filter.status, mine: ev.target.checked});
+                        },
+                    }),
+                    'Mine',
                 ]),
                 e('button', {
                     key: 'new',
                     onClick: function () {
-                        setForm(Object.assign({}, form, {open: !form.open}));
+                        setEditor({creating: !editor.creating, editing: null});
                     },
-                    style: {
-                        marginLeft: 'auto',
-                        background: 'var(--button-bg)',
-                        color: 'var(--button-color)',
-                        border: 'none',
-                        borderRadius: 4,
-                        padding: '5px 12px',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                    },
-                }, form.open ? 'Cancel' : 'New task'),
+                    style: Object.assign({}, BTN, {marginLeft: 'auto', padding: '5px 12px', fontSize: 12}),
+                }, editor.creating ? 'Cancel' : 'New task'),
             ]),
 
-            form.open ? e('form', {
-                key: 'form',
-                onSubmit: submit,
-                style: {padding: '10px 12px', borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.12)'},
-            }, [
-                e('input', {
-                    key: 'title',
-                    style: inputStyle,
-                    placeholder: 'Task title',
-                    'aria-label': 'Task title',
-                    value: form.title,
-                    maxLength: 256,
-                    onChange: function (ev) {
-                        setForm(Object.assign({}, form, {title: ev.target.value}));
-                    },
-                }),
-                e('input', {
-                    key: 'due',
-                    style: inputStyle,
-                    type: 'date',
-                    'aria-label': 'Due date',
-                    value: form.due,
-                    onChange: function (ev) {
-                        setForm(Object.assign({}, form, {due: ev.target.value}));
-                    },
-                }),
-                e('button', {
-                    key: 'save',
-                    type: 'submit',
-                    disabled: !form.title.trim(),
-                    style: {
-                        background: 'var(--button-bg)',
-                        color: 'var(--button-color)',
-                        border: 'none',
-                        borderRadius: 4,
-                        padding: '6px 14px',
-                        fontSize: 13,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                    },
-                }, 'Create task'),
-            ]) : null,
+            editor.creating ? e(TaskEditor, {
+                key: 'create',
+                members: ctx.members,
+                onSave: createTask,
+                onCancel: function () {
+                    setEditor({creating: false, editing: null});
+                },
+            }) : null,
+
+            editor.editing ? e(TaskEditor, {
+                key: 'edit-' + editor.editing.id,
+                task: editor.editing,
+                members: ctx.members,
+                onSave: function (payload) {
+                    return saveTask(editor.editing.id, payload);
+                },
+                onCancel: function () {
+                    setEditor({creating: false, editing: null});
+                },
+            }) : null,
 
             state.error ? e('div', {
                 key: 'err',
@@ -378,17 +636,28 @@
             }, state.error) : null,
 
             e('div', {key: 'list', style: {overflowY: 'auto', flex: 1}},
-                state.loading ? e('div', {style: {padding: 16, fontSize: 13, opacity: 0.7}}, 'Loading tasks…') :
-                    (shown.length === 0 ? e('div', {
+                state.loading ? e('div', {
+                    style: {padding: 16, fontSize: 13, opacity: 0.7},
+                }, 'Loading tasks…') :
+                    (state.tasks.length === 0 ? e('div', {
                         style: {padding: 16, fontSize: 13, opacity: 0.7},
-                    }, 'No tasks yet. Use "New task" to add one.') :
-                        shown.map(function (t) {
+                    }, page > 0
+                        ? 'No more tasks on this page.'
+                        : 'No tasks yet. Use "New task" to add one.') :
+                        state.tasks.map(function (t) {
                             return e(TaskRow, {
                                 key: t.id,
                                 task: t,
-                                usernames: ctx.usernames,
+                                members: ctx.members,
+                                // Mirrors the server rule (creator or
+                                // assignee). The server enforces it; this
+                                // only avoids offering a doomed action.
+                                canEdit: t.creator_id === ctx.userId || t.assignee_id === ctx.userId,
                                 canDelete: t.creator_id === ctx.userId,
                                 onStatus: setStatus,
+                                onEdit: function (task) {
+                                    setEditor({creating: false, editing: task});
+                                },
                                 onDelete: remove,
                             });
                         }))),
@@ -398,10 +667,40 @@
                 style: {
                     padding: '6px 12px',
                     borderTop: '1px solid rgba(var(--center-channel-color-rgb), 0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    flexWrap: 'wrap',
                     fontSize: 11,
                     color: 'rgba(var(--center-channel-color-rgb), 0.56)',
                 },
-            }, shown.length + ' of ' + state.tasks.length + ' task' + (state.tasks.length === 1 ? '' : 's') + ' · ' + statusLabel('todo') + '/' + statusLabel('in_progress') + '/' + statusLabel('done')),
+            }, [
+                e('button', {
+                    key: 'prev',
+                    disabled: !hasPrev || state.loading,
+                    onClick: function () {
+                        setPage(Math.max(0, page - 1));
+                    },
+                    style: Object.assign({}, selectStyle, {
+                        cursor: hasPrev ? 'pointer' : 'default',
+                        opacity: hasPrev ? 1 : 0.45,
+                    }),
+                }, 'Previous'),
+                e('button', {
+                    key: 'next',
+                    disabled: !hasNext || state.loading,
+                    onClick: function () {
+                        setPage(page + 1);
+                    },
+                    style: Object.assign({}, selectStyle, {
+                        cursor: hasNext ? 'pointer' : 'default',
+                        opacity: hasNext ? 1 : 0.45,
+                    }),
+                }, 'Next'),
+                e('span', {key: 'range'}, state.tasks.length === 0
+                    ? 'Page ' + (page + 1)
+                    : (first + 1) + '–' + (first + state.tasks.length)),
+            ]),
         ]);
     }
 
