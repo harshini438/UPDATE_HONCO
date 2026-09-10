@@ -22,6 +22,26 @@ else
     DC=(sudo -n docker compose "${FILES[@]}")
 fi
 
+# The bridge has to advertise an address a peer can actually reach.
+#
+# Left unset, JVB offers only the address it can see for itself -- a
+# docker-internal 172.x -- plus whatever STUN reports for the NAT, which is
+# an ephemeral public mapping that is not forwarded. A second machine on the
+# LAN then joins the room, sees the participant list, and gets no audio or
+# video at all: the failure looks like "it half works" rather than an error.
+#
+# Derived at startup rather than written into a file, so moving between
+# networks does not silently leave a stale address behind. Export it
+# yourself, or set HONCO_LAN_IP, to override.
+if [ -z "${JVB_ADVERTISE_IPS:-}" ]; then
+    if lan_ip=$(./lan-address.sh 2>/dev/null); then
+        export JVB_ADVERTISE_IPS="$lan_ip"
+    else
+        echo "meet.sh: could not derive a LAN address; JVB will not advertise one." >&2
+        echo "meet.sh: participants off this host would get no media. Set HONCO_LAN_IP." >&2
+    fi
+fi
+
 case "${1:-ps}" in
 up)      shift; "${DC[@]}" up -d "$@" ;;
 down)    shift; "${DC[@]}" down "$@" ;;

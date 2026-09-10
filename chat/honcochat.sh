@@ -81,7 +81,22 @@ start_svc() {
     set +a
     CMD_TOKEN="$(cat "$ROOT/run/.cmd-token" 2>/dev/null || true)"
     export CMD_TOKEN
-    export MEET_BASE="${MEET_BASE:-https://192.168.2.156:8443}"
+    # The base every /meet link is built from. It has to be an address the
+    # *participant's* browser can open, not this host's own view of itself:
+    # a localhost URL is unusable to anyone else, and a literal IP goes
+    # stale the moment the machine changes network. Derive it, and let
+    # MEET_BASE or HONCO_LAN_IP override when something else is wanted.
+    if [ -z "${MEET_BASE:-}" ]; then
+        if _lan_ip=$("$ROOT/lan-address.sh" 2>/dev/null); then
+            MEET_BASE="https://${_lan_ip}:8443"
+        else
+            echo "honcochat: could not derive a LAN address for MEET_BASE;" >&2
+            echo "honcochat: /meet links will only work on this host." >&2
+            MEET_BASE="https://localhost:8443"
+        fi
+        unset _lan_ip
+    fi
+    export MEET_BASE
     # Host is UTC; the people using this are not. Process-local only.
     export TZ="${TZ:-Asia/Kolkata}"
     mkdir -p "$ROOT/logs"
