@@ -1502,6 +1502,294 @@
         ]);
     }
 
+    // --- Honco Administration ----------------------------------------------
+
+    // Complements the System Console rather than replacing it. Everything
+    // shown is fetched from the server, which re-checks manage_system on
+    // every request -- this component never decides who is an admin, it
+    // only stops rendering a tab that would 403.
+
+    var HEALTH_STYLE = {
+        healthy: {dot: 'var(--online-indicator, #3db887)', label: 'Healthy'},
+        degraded: {dot: 'var(--away-indicator, #ffbc42)', label: 'Degraded'},
+        unavailable: {dot: 'var(--error-text, #d24b4e)', label: 'Unavailable'},
+    };
+
+    function healthStyle(s) {
+        return HEALTH_STYLE[s] || HEALTH_STYLE.unavailable;
+    }
+
+    function AdminSection(props) {
+        return e('div', {style: {marginBottom: 16}}, [
+            e('div', {
+                key: 'h',
+                style: {
+                    fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
+                    letterSpacing: 0.4, marginBottom: 6,
+                    color: 'rgba(var(--center-channel-color-rgb), 0.64)',
+                },
+            }, props.title),
+            e('div', {key: 'b'}, props.children),
+        ]);
+    }
+
+    function KeyValue(props) {
+        return e('div', {
+            style: {
+                display: 'flex', justifyContent: 'space-between', gap: 12,
+                fontSize: 13, padding: '3px 0',
+                color: 'var(--center-channel-color)',
+            },
+        }, [
+            e('span', {key: 'k', style: {opacity: 0.8}}, props.label),
+            e('span', {key: 'v', style: {fontWeight: 600, textAlign: 'right'}}, props.value),
+        ]);
+    }
+
+    // Booleans read better as words than as true/false, and "enabled" vs
+    // "disabled" is not always the safe direction -- public file links being
+    // disabled is good news, so the colour follows `good`, not the value.
+    function Flag(props) {
+        var on = Boolean(props.value);
+        var good = props.invert ? !on : on;
+        return e('div', {
+            style: {
+                display: 'flex', justifyContent: 'space-between', gap: 12,
+                fontSize: 13, padding: '3px 0',
+            },
+        }, [
+            e('span', {key: 'k', style: {opacity: 0.8}}, props.label),
+            e('span', {
+                key: 'v',
+                style: {
+                    fontWeight: 600,
+                    color: good ? 'var(--center-channel-color)' : 'var(--error-text)',
+                },
+            }, props.words ? (on ? props.words[0] : props.words[1]) : (on ? 'Enabled' : 'Disabled')),
+        ]);
+    }
+
+    function AdminPanel() {
+        var o = React.useState({data: null, loading: true, error: null});
+        var overview = o[0];
+        var setOverview = o[1];
+
+        var h = React.useState({data: null, loading: true, error: null});
+        var health = h[0];
+        var setHealth = h[1];
+
+        // Fetched on open and on an explicit refresh only. A dashboard that
+        // polls every few seconds would run health probes against Jitsi and
+        // Jibri forever for the benefit of a tab nobody is looking at.
+        var loadOverview = React.useCallback(function () {
+            setOverview(function (p) {
+                return {data: p.data, loading: true, error: null};
+            });
+            request('GET', '/admin/overview').then(function (d) {
+                setOverview({data: d, loading: false, error: null});
+            }).catch(function (err) {
+                setOverview({data: null, loading: false, error: err.message});
+            });
+        }, []);
+
+        var loadHealth = React.useCallback(function () {
+            setHealth(function (p) {
+                return {data: p.data, loading: true, error: null};
+            });
+            request('GET', '/admin/health').then(function (d) {
+                setHealth({data: d, loading: false, error: null});
+            }).catch(function (err) {
+                setHealth({data: null, loading: false, error: err.message});
+            });
+        }, []);
+
+        React.useEffect(function () {
+            loadOverview();
+            loadHealth();
+        }, [loadOverview, loadHealth]);
+
+        if (overview.error) {
+            return e('div', {
+                style: {padding: 16, fontSize: 13, color: 'var(--error-text)'},
+            }, overview.error);
+        }
+
+        var d = overview.data || {};
+        var usage = d.usage || {};
+        var sec = d.security || {};
+        var plug = d.plugin || {};
+        var failures = d.failures || [];
+
+        return e('div', {style: {display: 'flex', flexDirection: 'column', height: '100%'}}, [
+            e('div', {
+                key: 'bar',
+                style: {
+                    padding: '8px 12px',
+                    borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.12)',
+                    display: 'flex', alignItems: 'center', gap: 8,
+                },
+            }, [
+                e('span', {key: 't', style: {fontSize: 13, fontWeight: 600}}, 'Honco Administration'),
+                e('button', {
+                    key: 'r',
+                    onClick: function () {
+                        loadOverview();
+                        loadHealth();
+                    },
+                    style: {
+                        marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 4,
+                        cursor: 'pointer', background: 'var(--button-bg)',
+                        color: 'var(--button-color)', border: 'none', fontWeight: 600,
+                    },
+                }, 'Refresh'),
+            ]),
+
+            e('div', {key: 'body', style: {overflowY: 'auto', flex: 1, padding: '12px'}}, [
+
+                e(AdminSection, {key: 'health', title: 'System health'},
+                    health.loading && !health.data ? e('div', {style: {fontSize: 13, opacity: 0.7}}, 'Checking…') :
+                        (health.error ? e('div', {style: {fontSize: 13, color: 'var(--error-text)'}}, health.error) :
+                            ((health.data && health.data.checks) || []).map(function (c) {
+                                var st = healthStyle(c.status);
+                                return e('div', {
+                                    key: c.name,
+                                    style: {
+                                        display: 'flex', alignItems: 'center', gap: 8,
+                                        fontSize: 13, padding: '3px 0',
+                                    },
+                                }, [
+                                    e('span', {
+                                        key: 'd',
+                                        style: {
+                                            width: 8, height: 8, borderRadius: '50%',
+                                            background: st.dot, flexShrink: 0,
+                                        },
+                                    }),
+                                    e('span', {key: 'n', style: {flex: 1}}, c.name),
+                                    e('span', {
+                                        key: 's',
+                                        style: {
+                                            fontSize: 12,
+                                            color: 'rgba(var(--center-channel-color-rgb), 0.72)',
+                                            textAlign: 'right',
+                                        },
+                                    }, (c.detail || st.label) + (c.latency_ms ? ' · ' + c.latency_ms + 'ms' : '')),
+                                ]);
+                            }))),
+
+                e(AdminSection, {key: 'usage', title: 'Usage'}, [
+                    e(KeyValue, {key: 'u', label: 'Users', value: usage.users}),
+                    e(KeyValue, {key: 't', label: 'Teams', value: usage.teams}),
+                    e(KeyValue, {key: 'c', label: 'Channels', value: usage.channels}),
+                    e(KeyValue, {key: 'ma', label: 'Active meetings', value: usage.meetings_active}),
+                    e(KeyValue, {key: 'mt', label: 'Meetings (total)', value: usage.meetings_total}),
+                    e(KeyValue, {key: 'r', label: 'Recordings', value: usage.recordings}),
+                    e(KeyValue, {key: 'k', label: 'Tasks', value: usage.tasks}),
+                    e(KeyValue, {key: 's', label: 'Meeting summaries', value: usage.summaries}),
+                    e(KeyValue, {key: 'so', label: 'Support requests (open)', value: usage.support_open}),
+                    e(KeyValue, {key: 'st', label: 'Support requests (total)', value: usage.support_total}),
+                ]),
+
+                e(AdminSection, {key: 'plugin', title: 'Honco plugin'}, [
+                    e(KeyValue, {key: 'v', label: 'Version', value: plug.version || '—'}),
+                    e(KeyValue, {key: 'hm', label: 'Honco migration', value: plug.honco_migration}),
+                    e(KeyValue, {key: 'mm', label: 'Mattermost migrations', value: plug.mattermost_migration}),
+                    e(Flag, {key: 'bot', label: 'Notification bot', value: plug.bot_configured,
+                        words: ['Configured', 'Missing']}),
+                ]),
+
+                e(AdminSection, {key: 'fail', title: 'Recent failures'},
+                    failures.length === 0 ?
+                        e('div', {style: {fontSize: 13, opacity: 0.7}}, 'No recent failures.') :
+                        failures.map(function (f, i) {
+                            return e('div', {
+                                key: i,
+                                style: {
+                                    fontSize: 12, padding: '5px 0',
+                                    borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.06)',
+                                },
+                            }, [
+                                e('div', {key: 'h', style: {display: 'flex', gap: 8}}, [
+                                    e('span', {
+                                        key: 'k',
+                                        style: {fontWeight: 600, color: 'var(--error-text)'},
+                                    }, f.kind),
+                                    e('span', {
+                                        key: 't',
+                                        style: {
+                                            marginLeft: 'auto',
+                                            color: 'rgba(var(--center-channel-color-rgb), 0.56)',
+                                        },
+                                    }, f.at ? new Date(f.at).toLocaleString() : ''),
+                                ]),
+                                f.subject ? e('div', {
+                                    key: 's',
+                                    style: {marginTop: 2, wordBreak: 'break-word'},
+                                }, f.subject) : null,
+                                f.detail ? e('div', {
+                                    key: 'd',
+                                    style: {
+                                        marginTop: 2, opacity: 0.75, wordBreak: 'break-word',
+                                    },
+                                }, f.detail) : null,
+                            ]);
+                        })),
+
+                e(AdminSection, {key: 'sec', title: 'Security configuration'}, [
+                    e(Flag, {key: 'signup', label: 'Open self-signup', value: sec.self_signup_enabled, invert: true}),
+                    e(Flag, {key: 'mfa', label: 'Multi-factor auth', value: sec.mfa_enabled}),
+                    e(Flag, {key: 'files', label: 'File attachments', value: sec.file_attachments_enabled}),
+                    e(Flag, {key: 'public', label: 'Public file links', value: sec.public_file_links_enabled, invert: true}),
+                    e(Flag, {key: 'plugins', label: 'Plugins', value: sec.plugins_enabled}),
+                    e(Flag, {key: 'uploads', label: 'Plugin uploads', value: sec.plugin_uploads_enabled}),
+                    e(Flag, {key: 'sig', label: 'Require plugin signature', value: sec.require_plugin_signature}),
+                    e(Flag, {key: 'email', label: 'Email notifications', value: sec.email_notifications_enabled}),
+                    e(Flag, {key: 'push', label: 'Push notifications', value: sec.push_notifications_enabled}),
+                ]),
+
+                // Deliberately "configured or not". No value from any of
+                // these is ever sent to the browser.
+                e(AdminSection, {key: 'creds', title: 'Credentials (presence only)'}, [
+                    e(Flag, {key: 'smtp', label: 'SMTP', value: sec.smtp_configured,
+                        words: ['Configured', 'Not configured']}),
+                    e(Flag, {key: 'pushsrv', label: 'Push server', value: sec.push_server_configured,
+                        words: ['Configured', 'Not configured']}),
+                    e(Flag, {key: 'jibri', label: 'Jibri callback secret', value: sec.jibri_callback_configured,
+                        words: ['Configured', 'Not configured']}),
+                    e(Flag, {key: 'meet', label: 'Meet service secret', value: sec.meet_service_configured,
+                        words: ['Configured', 'Not configured']}),
+                    e(Flag, {key: 'sum', label: 'Summarizer endpoint', value: sec.summarizer_configured,
+                        words: ['Configured', 'Not configured']}),
+                    e(Flag, {key: 'sup', label: 'Support channel', value: sec.support_channel_configured,
+                        words: ['Configured', 'Not configured']}),
+                    e('div', {
+                        key: 'note',
+                        style: {fontSize: 11, opacity: 0.7, marginTop: 6, lineHeight: 1.5},
+                    }, 'Secret values are never sent to the browser — only whether each is set.'),
+                ]),
+
+                e(AdminSection, {key: 'net', title: 'Network'}, [
+                    e(KeyValue, {key: 'site', label: 'Site URL', value: sec.site_url || '—'}),
+                    e('div', {
+                        key: 'n',
+                        style: {fontSize: 11, opacity: 0.7, marginTop: 4, lineHeight: 1.5},
+                    }, 'Mattermost checks the WebSocket origin against this. A stale value ' +
+                       'breaks real-time updates while the server still answers HTTP.'),
+                ]),
+
+                e('div', {
+                    key: 'foot',
+                    style: {
+                        fontSize: 11, opacity: 0.6, paddingTop: 4,
+                        borderTop: '1px solid rgba(var(--center-channel-color-rgb), 0.12)',
+                    },
+                }, health.data && health.data.checked_at
+                    ? 'Last checked ' + new Date(health.data.checked_at).toLocaleTimeString()
+                    : ''),
+            ]),
+        ]);
+    }
+
     function HoncoPanel() {
         // Open on Meeting Intelligence when this channel has a remembered
         // selection, so a refresh returns the user to the summary they were
@@ -1514,6 +1802,22 @@
             }
         } catch (err) {
             initialTab = 'tasks';
+        }
+
+        // Whether to OFFER the Admin tab. Read from the webapp's own store
+        // purely so a non-admin is not shown a tab that would 403 on every
+        // request. This is not authorization: /admin/* asks Mattermost for
+        // manage_system on the server for every single call, and a user who
+        // edits this in their browser gains exactly nothing.
+        var isAdmin = false;
+        try {
+            var st = window.store ? window.store.getState() : null;
+            if (st) {
+                var me = st.entities.users.profiles[st.entities.users.currentUserId];
+                isAdmin = Boolean(me && (me.roles || '').split(' ').indexOf('system_admin') >= 0);
+            }
+        } catch (err) {
+            isAdmin = false;
         }
 
         var t = React.useState(initialTab);
@@ -1559,10 +1863,12 @@
                     display: 'flex',
                     borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.12)',
                 },
-            }, [tabButton('tasks', 'Tasks'), tabButton('meetings', 'Meeting Intelligence'), tabButton('support', 'Support')]),
+            }, [tabButton('tasks', 'Tasks'), tabButton('meetings', 'Meeting Intelligence'), tabButton('support', 'Support')].concat(isAdmin ? [tabButton('admin', 'Admin')] : [])),
 
             e('div', {key: 'panel', style: {flex: 1, minHeight: 0}},
-                tab === 'tasks' ? e(TasksPanel) : (tab === 'meetings' ? e(MeetingPanel) : e(SupportPanel))),
+                tab === 'tasks' ? e(TasksPanel) :
+                    (tab === 'meetings' ? e(MeetingPanel) :
+                        (tab === 'support' ? e(SupportPanel) : e(AdminPanel)))),
         ]);
     }
 

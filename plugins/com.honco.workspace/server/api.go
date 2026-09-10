@@ -117,6 +117,11 @@ func (p *Plugin) newRouter() *mux.Router {
 	api.HandleFunc("/support/requests/{request_id}/end", p.handleEndSupport).Methods(http.MethodPost)
 	api.HandleFunc("/support/requests/{request_id}/cancel", p.handleCancelSupport).Methods(http.MethodPost)
 
+	// Honco Administration. Both gated on Mattermost's own manage_system
+	// permission -- the same one that gates the System Console.
+	api.HandleFunc("/admin/overview", p.handleAdminOverview).Methods(http.MethodGet)
+	api.HandleFunc("/admin/health", p.handleAdminHealth).Methods(http.MethodGet)
+
 	root.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusNotFound, errorBody{Error: "no such endpoint"})
 	})
