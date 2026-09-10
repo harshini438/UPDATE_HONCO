@@ -90,9 +90,22 @@ curl -s -o /dev/null -H "Authorization: Bearer $TA" -H 'Content-Type: applicatio
    -X POST "$API/channels/$CH/members" -d "{\"user_id\":\"$BID\"}"
 echo "  channel: $CH"
 
+# The meet-service secret is needed to register a meeting. Prefer the
+# secret file if this host has one; otherwise read it from the running
+# configuration, which is authoritative and always present. The value is
+# used and never printed.
 MEET_SECRET_FILE="${MEET_SECRET_FILE:-$HOME/.honco-meet-service-secret}"
 # shellcheck source=/dev/null
 [ -f "$MEET_SECRET_FILE" ] && . "$MEET_SECRET_FILE"
+if [ -z "${MEET_SECRET:-}" ]; then
+    MEET_SECRET=$("$MMCTL" --local config show --json 2>/dev/null | python3 -c "
+import json,sys
+try: print(json.load(sys.stdin)['PluginSettings']['Plugins']['com.honco.workspace'].get('meetservicesecret',''))
+except Exception: print('')
+")
+fi
+[ -n "${MEET_SECRET:-}" ] && say_secret="from configuration" || say_secret="NOT FOUND"
+echo "  meet-service secret: $say_secret"
 M=$(curl -s -X POST "$PLUG/meetings/register" -H 'Content-Type: application/json' \
    -H "X-Honco-Service-Secret: ${MEET_SECRET:-}" \
    -d "{\"room_name\":\"honco-miverify-$SUF\",\"channel_id\":\"$CH\",\"creator_id\":\"$AID\",\"topic\":\"Release planning\"}" \
