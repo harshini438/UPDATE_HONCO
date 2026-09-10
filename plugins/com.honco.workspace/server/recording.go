@@ -82,11 +82,17 @@ func (s *Store) UpsertMeeting(m *Meeting) error {
 	return err
 }
 
+// GetMeetingByRoom resolves the room name Jibri reports back to a meeting.
+// Like GetMeeting it reads the full row, so the caller can update the card
+// without a second query -- and without mistaking a missing PostID for a
+// meeting that has no card.
 func (s *Store) GetMeetingByRoom(room string) (*Meeting, error) {
 	var m Meeting
 	err := s.db.QueryRow(
-		`SELECT `+meetingColumns+` FROM honco_meetings WHERE room_name = $1`, room,
-	).Scan(&m.ID, &m.RoomName, &m.ChannelID, &m.CreatorID, &m.Topic, &m.CreatedAt)
+		`SELECT `+meetingColumnsFull+` FROM honco_meetings WHERE room_name = $1`, room,
+	).Scan(&m.ID, &m.RoomName, &m.ChannelID, &m.CreatorID, &m.Topic, &m.CreatedAt,
+		&m.Status, &m.PostID, &m.ScheduledAt, &m.StartedAt, &m.EndedAt,
+		&m.ParticipantCount, &m.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

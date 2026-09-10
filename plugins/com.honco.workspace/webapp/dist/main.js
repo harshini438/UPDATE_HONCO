@@ -405,6 +405,69 @@
         ]);
     }
 
+    // --- Meeting Intelligence deep link -------------------------------------
+
+    // Clicking "Meeting Summary" on a card has to open the summary for THAT
+    // meeting, not a panel the user then has to search.
+    //
+    // The card lives in the centre channel and the panel lives in the RHS;
+    // they are separate React trees with no shared state, so this is the
+    // one small bus between them. It carries a meeting id and nothing else
+    // -- the panel still fetches through the authenticated API, so the
+    // server re-proves channel membership exactly as it would for any other
+    // request. A meeting id here grants nothing.
+    var MeetingIntent = {
+        meetingId: null,
+        listeners: [],
+
+        // Remembered per channel so a refresh comes back to the meeting the
+        // user was reading. sessionStorage can throw in a private window or
+        // where site data is blocked, so every access is guarded and the
+        // panel works perfectly well without it.
+        key: function (channelId) {
+            return 'honco.meeting.selected.' + (channelId || 'none');
+        },
+        remember: function (channelId, meetingId) {
+            try {
+                window.sessionStorage.setItem(this.key(channelId), meetingId || '');
+            } catch (err) { /* not worth failing over */ }
+        },
+        recall: function (channelId) {
+            try {
+                return window.sessionStorage.getItem(this.key(channelId)) || null;
+            } catch (err) {
+                return null;
+            }
+        },
+
+        open: function (meetingId) {
+            if (!meetingId) {
+                return;
+            }
+            this.meetingId = meetingId;
+            this.listeners.forEach(function (fn) {
+                try {
+                    fn(meetingId);
+                } catch (err) { /* one bad listener must not stop the rest */ }
+            });
+        },
+        subscribe: function (fn) {
+            this.listeners.push(fn);
+            var self = this;
+            return function () {
+                var i = self.listeners.indexOf(fn);
+                if (i >= 0) {
+                    self.listeners.splice(i, 1);
+                }
+            };
+        },
+    };
+
+    // What the card calls.
+    window.HoncoOpenMeetingIntelligence = function (meetingId) {
+        MeetingIntent.open(meetingId);
+    };
+
     // --- Meeting Intelligence ----------------------------------------------
 
     // requestStatus is the variant used where "not found" is an ordinary
@@ -502,6 +565,22 @@
             channelId = null;
         }
 
+        // A card asked for a specific meeting: select it, whether the
+        // panel was already open or is opening now.
+        React.useEffect(function () {
+            var stop = MeetingIntent.subscribe(function (meetingId) {
+                loadSummary(meetingId);
+            });
+            // Honour an intent raised before this panel mounted, and
+            // otherwise fall back to whatever was last read in this channel.
+            var pending = MeetingIntent.meetingId || MeetingIntent.recall(channelId);
+            if (pending) {
+                MeetingIntent.meetingId = null;
+                loadSummary(pending);
+            }
+            return stop;
+        }, [channelId]);
+
         React.useEffect(function () {
             if (!channelId) {
                 setState({channelId: null, meetings: [], statuses: {}, loading: false, error: null});
@@ -529,6 +608,8 @@
         }, [channelId]);
 
         function loadSummary(meetingId) {
+            // Remembered so a refresh returns to the same meeting.
+            MeetingIntent.remember(channelId, meetingId);
             setSel({id: meetingId, summary: null, loading: true, error: null, generating: false});
             setShowRaw(false);
             requestStatus('GET', '/meetings/' + encodeURIComponent(meetingId) + '/summary').then(function (res) {
@@ -773,9 +854,30 @@
     // size would crowd the bar; tabs are what Mattermost's own RHS uses
     // for the same problem.
     function HoncoPanel() {
-        var t = React.useState('tasks');
+        // Open on Meeting Intelligence when this channel has a remembered
+        // selection, so a refresh returns the user to the summary they were
+        // reading rather than dropping them back on Tasks.
+        var initialTab = 'tasks';
+        try {
+            var ch = window.store ? window.store.getState().entities.channels.currentChannelId : null;
+            if (MeetingIntent.recall(ch)) {
+                initialTab = 'meetings';
+            }
+        } catch (err) {
+            initialTab = 'tasks';
+        }
+
+        var t = React.useState(initialTab);
         var tab = t[0];
         var setTab = t[1];
+
+        // Opening a summary from a card should land on the right tab, not
+        // leave the user looking at Tasks wondering what happened.
+        React.useEffect(function () {
+            return MeetingIntent.subscribe(function () {
+                setTab('meetings');
+            });
+        }, []);
 
         function tabButton(id, label) {
             var active = tab === id;
@@ -946,7 +1048,7 @@
                 target: '_blank',
                 rel: 'noopener noreferrer',
                 style: Object.assign({}, secondary, {textDecoration: 'none'}),
-            }, '🎬 View Recording'));
+            }, 'View Recording'));
         } else if (card.recording_status === 'failed') {
             actions.push(e('span', {
                 key: 'recfail',
@@ -964,7 +1066,7 @@
                         window.HoncoOpenMeetingIntelligence(card.meeting_id);
                     }
                 },
-            }, '📝 Meeting Summary'));
+            }, 'View Summary'));
         }
 
         return e('div', {
@@ -1042,6 +1144,18 @@
                     rel: 'noopener noreferrer',
                     style: btn,
                 }, 'Join Meeting')) : null,
+
+            (card.recording_status === 'ready' || card.has_summary) ? e('div', {
+                key: 'available',
+                style: {
+                    fontSize: 12,
+                    color: 'rgba(var(--center-channel-color-rgb), 0.72)',
+                    marginBottom: 6,
+                },
+            }, [
+                card.recording_status === 'ready' ? e('div', {key: 'r'}, '🎬 Recording available') : null,
+                card.has_summary ? e('div', {key: 's'}, '📝 Meeting Summary') : null,
+            ]) : null,
 
             actions.length ? e('div', {key: 'actions'}, actions) : null,
         ]);

@@ -135,11 +135,19 @@ func (s *Store) GetSummaryByMeeting(meetingID string) (*MeetingSummary, error) {
 		`SELECT `+summaryColumns+` FROM honco_meeting_summaries WHERE meeting_id = $1`, meetingID))
 }
 
+// GetMeeting returns the whole meeting row, lifecycle included.
+//
+// The full column set matters: PostID lives there, and a Meeting loaded
+// without it looks exactly like a meeting that has no card. Callers that
+// then try to refresh the card silently do nothing -- which is how a ready
+// summary failed to appear on its own meeting's card.
 func (s *Store) GetMeeting(meetingID string) (*Meeting, error) {
 	var m Meeting
 	err := s.db.QueryRow(
-		`SELECT `+meetingColumns+` FROM honco_meetings WHERE id = $1`, meetingID,
-	).Scan(&m.ID, &m.RoomName, &m.ChannelID, &m.CreatorID, &m.Topic, &m.CreatedAt)
+		`SELECT `+meetingColumnsFull+` FROM honco_meetings WHERE id = $1`, meetingID,
+	).Scan(&m.ID, &m.RoomName, &m.ChannelID, &m.CreatorID, &m.Topic, &m.CreatedAt,
+		&m.Status, &m.PostID, &m.ScheduledAt, &m.StartedAt, &m.EndedAt,
+		&m.ParticipantCount, &m.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
