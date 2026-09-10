@@ -288,7 +288,10 @@ func (p *Plugin) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if task.AssigneeID != previousAssignee {
+		// Both halves of a reassignment: the person gaining the work and
+		// the person losing it.
 		p.notifyAssigned(task, userID)
+		p.notifyUnassigned(task, previousAssignee, userID)
 	}
 	if task.Status != previousStatus {
 		if task.Status == StatusDone {
