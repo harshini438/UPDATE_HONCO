@@ -172,6 +172,55 @@ var migrations = []migration{
 				ON honco_meeting_summaries (channel_id, created_at)`,
 		},
 	},
+	{
+		version: 5,
+		name:    "meeting_collaboration",
+		stmts: []string{
+			// The meeting row grows a lifecycle. Every statement is an
+			// additive ADD COLUMN IF NOT EXISTS: this runs against a table
+			// that already holds real meetings and their recordings, so
+			// nothing may be rewritten or dropped.
+			//
+			// Existing rows default to 'ended': they were created before
+			// there was a lifecycle, their calls are long over, and
+			// defaulting them to 'active' would light up the channel with
+			// meetings that finished days ago.
+			`ALTER TABLE honco_meetings ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'ended'`,
+			// The card. One post per meeting, updated in place -- this is
+			// what keeps the channel from filling with duplicates.
+			`ALTER TABLE honco_meetings ADD COLUMN IF NOT EXISTS post_id VARCHAR(26) NOT NULL DEFAULT ''`,
+			`ALTER TABLE honco_meetings ADD COLUMN IF NOT EXISTS scheduled_at BIGINT NOT NULL DEFAULT 0`,
+			`ALTER TABLE honco_meetings ADD COLUMN IF NOT EXISTS started_at BIGINT NOT NULL DEFAULT 0`,
+			`ALTER TABLE honco_meetings ADD COLUMN IF NOT EXISTS ended_at BIGINT NOT NULL DEFAULT 0`,
+			`ALTER TABLE honco_meetings ADD COLUMN IF NOT EXISTS participant_count INTEGER NOT NULL DEFAULT 0`,
+			`ALTER TABLE honco_meetings ADD COLUMN IF NOT EXISTS updated_at BIGINT NOT NULL DEFAULT 0`,
+			`CREATE INDEX IF NOT EXISTS idx_honco_meetings_status
+				ON honco_meetings (status, updated_at)`,
+
+			// Who was actually in the call, as reported by Prosody.
+			//
+			// display_name is what Jitsi shows; it is not a Mattermost
+			// identity and must never be treated as one. There is no
+			// authenticated link between a Jitsi occupant and a Honco user
+			// in this deployment, so this table records what the meeting
+			// server saw and nothing more.
+			`CREATE TABLE IF NOT EXISTS honco_meeting_participants (
+				id           VARCHAR(26)  PRIMARY KEY,
+				meeting_id   VARCHAR(26)  NOT NULL,
+				occupant_key VARCHAR(255) NOT NULL,
+				display_name VARCHAR(255) NOT NULL DEFAULT '',
+				joined_at    BIGINT       NOT NULL,
+				left_at      BIGINT       NOT NULL DEFAULT 0,
+				present      BOOLEAN      NOT NULL DEFAULT TRUE
+			)`,
+			// One row per occupant per meeting: the upsert key that makes
+			// a repeated poll idempotent rather than additive.
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_honco_participants_occupant
+				ON honco_meeting_participants (meeting_id, occupant_key)`,
+			`CREATE INDEX IF NOT EXISTS idx_honco_participants_meeting
+				ON honco_meeting_participants (meeting_id, present)`,
+		},
+	},
 }
 
 // Migrate brings the plugin's own schema up to date.

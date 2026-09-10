@@ -33,6 +33,13 @@ type Plugin struct {
 	// reload and two scanners would run at once.
 	stop     chan struct{}
 	stopOnce sync.Once
+
+	// Debounce for meetings whose room has gone empty. In memory on
+	// purpose: it is a timer, not a fact worth persisting, and a restart
+	// that simply restarts the clock can only delay an ending, never end
+	// a live call early.
+	emptyRooms map[string]int64
+	emptyMu    sync.Mutex
 }
 
 func nowMillis() int64 { return time.Now().UnixMilli() }
@@ -72,7 +79,12 @@ func (p *Plugin) OnActivate() error {
 	// notification ledger first, so this can run on every node and still
 	// produce exactly one message per task per due date.
 	p.stop = make(chan struct{})
+	p.emptyRooms = map[string]int64{}
 	go p.runDueScanner()
+
+	// Keeps every live meeting card in step with who is actually in the
+	// call. Server-side, and only for meetings that are running.
+	go p.runMeetingPoller()
 
 	p.client.Log.Info("Honco Workspace activated", "bot_id", botID)
 	return nil

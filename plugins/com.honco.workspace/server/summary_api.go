@@ -302,4 +302,10 @@ func (p *Plugin) finishSummary(meeting *Meeting, teamID, requesterID string, res
 		return
 	}
 	p.notifyMeetingSummary(meeting, result)
+
+	// Surface the summary on the card, so the meeting has one place that
+	// shows everything about it.
+	if fresh, ferr := p.store.GetMeeting(meeting.ID); ferr == nil && fresh != nil {
+		p.refreshMeetingCard(fresh)
+	}
 }

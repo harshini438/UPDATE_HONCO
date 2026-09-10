@@ -18,6 +18,17 @@ type Meeting struct {
 	CreatorID string `json:"creator_id"`
 	Topic     string `json:"topic"`
 	CreatedAt int64  `json:"created_at"`
+
+	// Lifecycle, added in migration 5. Meetings registered before that
+	// migration default to `ended` -- their calls are long over, and
+	// defaulting them to active would resurrect them in the channel.
+	Status           string `json:"status"`
+	PostID           string `json:"post_id,omitempty"`
+	ScheduledAt      int64  `json:"scheduled_at,omitempty"`
+	StartedAt        int64  `json:"started_at,omitempty"`
+	EndedAt          int64  `json:"ended_at,omitempty"`
+	ParticipantCount int    `json:"participant_count"`
+	UpdatedAt        int64  `json:"updated_at,omitempty"`
 }
 
 // Recording statuses. `ready` means a media file arrived and was stored;
@@ -43,18 +54,31 @@ type Recording struct {
 
 const meetingColumns = `id, room_name, channel_id, creator_id, topic, created_at`
 
+// meetingColumnsFull adds the lifecycle columns. The short list is kept for
+// the recording paths, which predate the lifecycle and do not need it.
+const meetingColumnsFull = meetingColumns + `, status, post_id, scheduled_at,
+	started_at, ended_at, participant_count, updated_at`
+
 // UpsertMeeting registers a room, or refreshes it if the same room is
 // created again. Rooms carry entropy and are effectively single-use, but
 // making this idempotent means a retried registration is harmless.
 func (s *Store) UpsertMeeting(m *Meeting) error {
+	// status and scheduled_at are set explicitly rather than left to the
+	// column default: that default is 'ended', which exists only to stop
+	// migration 5 resurrecting meetings that finished before there was a
+	// lifecycle. A meeting being registered now is not one of those.
 	_, err := s.db.Exec(`
-		INSERT INTO honco_meetings (`+meetingColumns+`)
-		VALUES ($1,$2,$3,$4,$5,$6)
+		INSERT INTO honco_meetings (`+meetingColumns+`, status, scheduled_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$6)
 		ON CONFLICT (room_name) DO UPDATE
-		SET channel_id = EXCLUDED.channel_id,
-		    creator_id = EXCLUDED.creator_id,
-		    topic      = EXCLUDED.topic`,
-		m.ID, m.RoomName, m.ChannelID, m.CreatorID, m.Topic, m.CreatedAt)
+		SET channel_id   = EXCLUDED.channel_id,
+		    creator_id   = EXCLUDED.creator_id,
+		    topic        = EXCLUDED.topic,
+		    status       = EXCLUDED.status,
+		    scheduled_at = EXCLUDED.scheduled_at,
+		    updated_at   = EXCLUDED.updated_at`,
+		m.ID, m.RoomName, m.ChannelID, m.CreatorID, m.Topic, m.CreatedAt,
+		m.Status, m.ScheduledAt)
 	return err
 }
 

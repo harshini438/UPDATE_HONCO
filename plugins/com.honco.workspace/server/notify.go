@@ -22,6 +22,11 @@ const (
 
 	KindMeetingSummaryReady  = "meeting_summary_ready"
 	KindMeetingSummaryFailed = "meeting_summary_failed"
+
+	KindMeetingStarted = "meeting_started"
+	KindMeetingJoined  = "meeting_joined"
+	KindMeetingLeft    = "meeting_left"
+	KindMeetingEnded   = "meeting_ended"
 )
 
 // dueSoonWindow: how far ahead of the due date the "due soon" nudge goes

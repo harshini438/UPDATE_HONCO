@@ -35,6 +35,12 @@ type configuration struct {
 	SummarizerUser           string
 	SummarizerKeyPath        string
 	SummarizerTimeoutSeconds int
+
+	// Meeting collaboration. None of these are secrets: they say where
+	// the meeting server is, not how to authenticate to it.
+	MeetPublicURL  string
+	ProsodyHTTPURL string
+	XMPPDomain     string
 }
 
 // summarizerTimeout keeps the configured value inside a sane band. A zero
@@ -89,6 +95,10 @@ type registerMeetingRequest struct {
 	ChannelID string `json:"channel_id"`
 	CreatorID string `json:"creator_id"`
 	Topic     string `json:"topic"`
+
+	// ScheduledAt is set by meetsvc for a future meeting, in epoch
+	// milliseconds. Absent or zero means the meeting starts now.
+	ScheduledAt int64 `json:"scheduled_at"`
 }
 
 // handleRegisterMeeting records that a Jitsi room belongs to a channel.
@@ -127,6 +137,14 @@ func (p *Plugin) handleRegisterMeeting(w http.ResponseWriter, r *http.Request) {
 		CreatorID: req.CreatorID,
 		Topic:     strings.TrimSpace(req.Topic),
 		CreatedAt: nowMillis(),
+
+		Status:      MeetingActive,
+		ScheduledAt: req.ScheduledAt,
+	}
+	// A meeting booked for later has no room yet and nobody in it; it
+	// becomes active when the poller first sees an occupant.
+	if req.ScheduledAt > nowMillis() {
+		m.Status = MeetingScheduled
 	}
 	if len(m.Topic) > 255 {
 		m.Topic = m.Topic[:255]
@@ -136,6 +154,11 @@ func (p *Plugin) handleRegisterMeeting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.client.Log.Info("honco: meeting registered", "room", m.RoomName, "channel_id", m.ChannelID)
+
+	// The card is the meeting's presence in the channel. Created here so
+	// it exists the moment the room does, and updated in place from then
+	// on -- meetsvc no longer posts a link of its own.
+	p.ensureMeetingCard(m)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "registered", "meeting_id": m.ID})
 }
 
@@ -352,6 +375,13 @@ func (p *Plugin) postRecordingMessage(m *Meeting, rec *Recording) {
 
 	if err := p.client.Post.CreatePost(post); err != nil {
 		p.client.Log.Warn("honco: could not post recording message", "err", err.Error())
+	}
+
+	// The card is the meeting's single surface, so it learns about the
+	// recording too -- reading the row the callback just wrote rather than
+	// tracking recordings separately.
+	if fresh, ferr := p.store.GetMeeting(m.ID); ferr == nil && fresh != nil {
+		p.refreshMeetingCard(fresh)
 	}
 }
 

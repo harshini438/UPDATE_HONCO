@@ -23,7 +23,19 @@ SVCPID="$ROOT/run/meetsvc.pid"
 SVCLOG="$ROOT/logs/meetsvc.log"
 LOG="$ROOT/logs/honcochat.log"
 PORT="${HONCO_PORT:-8065}"
-HOST_IP="${HONCO_HOST_IP:-192.168.2.155}"
+# The address browsers actually use to reach the chat server.
+#
+# This becomes SiteURL, and SiteURL is not cosmetic: Mattermost checks the
+# websocket Origin against it, so a value nobody browses to silently kills
+# every real-time update in the web client -- new messages, typing, and
+# plugin events alike -- while the server still answers HTTP and looks
+# healthy. It also generates password-reset links.
+#
+# `localhost` is right for this deployment because the server listens
+# inside WSL, which forwards only to the Windows host's loopback; the LAN
+# address is not reachable for 8065 (unlike Jitsi, which Docker publishes
+# on all interfaces). Set HONCO_HOST_IP on a host where that differs.
+HOST_IP="${HONCO_HOST_IP:-localhost}"
 
 # SiteURL must match the address people actually use, or websockets, CSRF checks
 # and every emailed link break. A quick tunnel issues a fresh hostname on each

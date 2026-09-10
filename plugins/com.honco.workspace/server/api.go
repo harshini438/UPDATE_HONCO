@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
+	"github.com/mattermost/mattermost/server/public/model"
 )
 
 // --- HTTP plumbing ---------------------------------------------------------
@@ -100,6 +101,11 @@ func (p *Plugin) newRouter() *mux.Router {
 	api.HandleFunc("/meetings/{meeting_id}/summary", p.handleGenerateSummary).Methods(http.MethodPost)
 	api.HandleFunc("/meetings/{meeting_id}/summary", p.handleGetSummary).Methods(http.MethodGet)
 
+	// Meeting collaboration. Read-only: joining is opening the Jitsi room,
+	// whose address the card already carries.
+	api.HandleFunc("/meetings/{meeting_id}", p.handleGetMeeting).Methods(http.MethodGet)
+	api.HandleFunc("/channels/{channel_id}/active-meetings", p.handleListActiveMeetings).Methods(http.MethodGet)
+
 	root.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusNotFound, errorBody{Error: "no such endpoint"})
 	})
@@ -118,4 +124,16 @@ func (p *Plugin) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"plugin":  "com.honco.workspace",
 		"version": "0.1.0",
 	})
+}
+
+// muxVar reads a path variable. A thin wrapper so handlers do not each
+// import the router just to read one segment.
+func muxVar(r *http.Request, name string) string {
+	return mux.Vars(r)[name]
+}
+
+// validID is the shape check every id-bearing path segment goes through
+// before it is used in a query or an authorization decision.
+func validID(id string) bool {
+	return model.IsValidId(id)
 }

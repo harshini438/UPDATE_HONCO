@@ -45,6 +45,13 @@ const (
 	defaultSummarizerPort    = 31013
 	defaultSummarizerUser    = "database"
 	defaultSummarizerTimeout = 300
+
+	// Where the meeting server is, when the System Console says nothing.
+	// The join URL must be one a participant's browser can open, which is
+	// why it is configurable rather than assumed.
+	defaultMeetPublicURL  = "https://localhost:8443"
+	defaultProsodyHTTPURL = "http://127.0.0.1:5280"
+	defaultXMPPDomain     = "meet.jitsi"
 )
 
 // errSummarizerUnavailable means the Claude backend could not be reached

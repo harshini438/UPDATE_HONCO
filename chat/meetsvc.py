@@ -151,7 +151,7 @@ def mm_api(method, path, body=None):
         return None
 
 
-def register_room(url, channel_id, user, topic):
+def register_room(url, channel_id, user, topic, user_id="", scheduled_at=0):
     """Tell the plugin that this Jitsi room belongs to this channel.
 
     Deliberately best-effort: a meeting must still start if the chat server
@@ -166,8 +166,13 @@ def register_room(url, channel_id, user, topic):
     body = json.dumps({
         "room_name": room,
         "channel_id": channel_id,
-        "creator_id": "",
+        # The plugin renders "started by" from this, and resolves it
+        # through Mattermost -- an empty id would show "Someone".
+        "creator_id": user_id or "",
         "topic": topic or "",
+        # Epoch milliseconds for a future meeting; 0 means "now", which
+        # is what makes the card show Scheduled rather than Active.
+        "scheduled_at": int(scheduled_at * 1000) if scheduled_at else 0,
     }).encode()
     req = urllib.request.Request(
         CHAT_URL + REGISTER_PATH, data=body, method="POST",
@@ -430,7 +435,7 @@ def cancel_meeting(item_id, channel_id):
     return cancelled_item
 
 
-def schedule_meeting(channel_id, channel_name, user, text):
+def schedule_meeting(channel_id, channel_name, user, text, user_id=""):
     """The actual scheduling logic, shared verbatim by the /meet text
     command and the dialog submission handler -- exactly the 'reuse the
     existing /meet backend logic instead of duplicating' requirement.
@@ -447,7 +452,8 @@ def schedule_meeting(channel_id, channel_name, user, text):
     url = room_url(slugify(topic))
     # Register before answering, so a recording started immediately after
     # the room link appears is already routable to this channel.
-    register_room(url, channel_id, user, topic)
+    register_room(url, channel_id, user, topic, user_id,
+                  when.timestamp() if when is not None else 0)
 
     if when is None:
         record_history({
@@ -480,6 +486,7 @@ def handle(form):
     channel_id = form.get("channel_id", [""])[0]
     channel_name = form.get("channel_name", [""])[0]
     user = form.get("user_name", ["someone"])[0]
+    user_id = form.get("user_id", [""])[0]
     trigger_id = form.get("trigger_id", [""])[0]
 
     if text.lower() in ("help", "-h", "--help"):
@@ -545,15 +552,22 @@ def handle(form):
             return ephemeral("Cancelled **%s**." % cancelled_item["topic"])
         return ephemeral("No such id in this channel. Check `/meet list` for current ids.")
 
-    url, message, item_id = schedule_meeting(channel_id, channel_name, user, text)
+    url, message, item_id = schedule_meeting(channel_id, channel_name, user, text, user_id)
     # No Copy Link button: the URL is already in the message above as a
     # fenced code block, which gets Mattermost's own native one-click copy
     # icon for free -- a button whose only job was to reveal that same code
     # block one click later was exactly the bug report (users expected the
     # button itself to copy, and it didn't). Cancel is still a real action.
+    #
+    # The channel-visible artifact is now the plugin's meeting card, which
+    # carries the topic, creator, live status, participants, Join button and
+    # -- later -- the recording and summary actions. Posting this message
+    # in_channel as well would put two announcements of the same meeting
+    # side by side, so the command answers the person who ran it and lets
+    # the card be the thing everyone sees.
     if item_id:
-        return with_actions(in_channel(message), [cancel_button(item_id, channel_id)])
-    return in_channel(message)
+        return with_actions(ephemeral(message), [cancel_button(item_id, channel_id)])
+    return ephemeral(message)
 
 
 def ephemeral(text):
@@ -626,7 +640,8 @@ class Handler(BaseHTTPRequestHandler):
             channel_id = state.get("channel_id", "")
             channel_name = state.get("channel_name", "")
             submission = payload.get("submission") or {}
-            user = resolve_username(payload.get("user_id", ""))
+            user_id = payload.get("user_id", "")
+            user = resolve_username(user_id)
 
             # Recombine the dialog's two fields into the one syntax
             # schedule_meeting/parse_when already understands. parse_when's
@@ -638,7 +653,7 @@ class Handler(BaseHTTPRequestHandler):
             when_text = (submission.get("when") or "").strip()
             name_text = (submission.get("name") or "").strip()
             combined = (when_text + " " + name_text) if when_text else name_text
-            url, message, item_id = schedule_meeting(channel_id, channel_name, user, combined)
+            url, message, item_id = schedule_meeting(channel_id, channel_name, user, combined, user_id)
             # Same reasoning as the text-command path: no Copy Link button,
             # the code block in `message` already gives one-click native
             # copy. Cancel is still attached when there's something to cancel.

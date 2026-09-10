@@ -81,6 +81,30 @@
                 "type": "number",
                 "help_text": "How long to wait for a summary before giving up and marking the generation failed. Clamped to 10-900.",
                 "default": 300
+            },
+            {
+                "key": "MeetPublicURL",
+                "display_name": "Meeting join URL base",
+                "type": "text",
+                "help_text": "Base address the Join Meeting button uses, e.g. https://192.168.1.11:8443. It must be reachable from a PARTICIPANT'S browser, so a localhost URL works only for people sitting at the server. Keep this the same as meetsvc's MEET_BASE.",
+                "placeholder": "https://192.168.1.11:8443",
+                "default": null
+            },
+            {
+                "key": "ProsodyHTTPURL",
+                "display_name": "Prosody HTTP URL",
+                "type": "text",
+                "help_text": "Where the plugin asks Jitsi who is in a meeting (mod_muc_size). Loopback only -- this must not be reachable off the host.",
+                "placeholder": "http://127.0.0.1:5280",
+                "default": "http://127.0.0.1:5280"
+            },
+            {
+                "key": "XMPPDomain",
+                "display_name": "Jitsi XMPP domain",
+                "type": "text",
+                "help_text": "The Jitsi XMPP domain, used to address rooms when asking for participants. Matches XMPP_DOMAIN in the Jitsi .env.",
+                "placeholder": "meet.jitsi",
+                "default": "meet.jitsi"
             }
         ]
     }

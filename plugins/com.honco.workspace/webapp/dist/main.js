@@ -815,6 +815,238 @@
         ]);
     }
 
+    // --- Meeting card ------------------------------------------------------
+
+    // Rendered for every post of type custom_honco_meeting. Everything it
+    // shows comes from props the server built, after it had already proved
+    // the reader may see this channel -- the component makes no
+    // authorization decision of its own and asks for nothing extra.
+
+    var MEETING_POST_TYPE = 'custom_honco_meeting';
+
+    // Plugin websocket events arrive prefixed with custom_<plugin id>_.
+    var MEETING_WS_EVENT = 'custom_' + PLUGIN_ID + '_meeting_updated';
+
+    var STATUS_STYLE = {
+        scheduled: {label: 'Scheduled', dot: 'var(--away-indicator, #ffbc42)'},
+        active: {label: 'Meeting is active', dot: 'var(--online-indicator, #3db887)'},
+        ended: {label: 'Meeting ended', dot: 'rgba(var(--center-channel-color-rgb), 0.32)'},
+    };
+
+    function statusOf(v) {
+        return STATUS_STYLE[v] || STATUS_STYLE.ended;
+    }
+
+    function Avatar(props) {
+        // A coloured initial, so a list of names reads as people at a
+        // glance. Derived from the name itself so it is stable per person
+        // without needing an identity we do not have.
+        var name = props.name || '?';
+        var hue = 0;
+        for (var i = 0; i < name.length; i++) {
+            hue = (hue * 31 + name.charCodeAt(i)) % 360;
+        }
+        return e('span', {
+            style: {
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 22,
+                height: 22,
+                borderRadius: '50%',
+                marginRight: 8,
+                flexShrink: 0,
+                fontSize: 11,
+                fontWeight: 700,
+                color: '#fff',
+                background: 'hsl(' + hue + ', 45%, 45%)',
+            },
+        }, name.charAt(0).toUpperCase());
+    }
+
+    function MeetingCard(props) {
+        var post = props.post || {};
+        var p = (post.props && post.props.honco_meeting) || {};
+
+        // The websocket tells us something changed; re-read the card from
+        // the API rather than trusting anything the event carries.
+        var s = React.useState(p);
+        var card = s[0];
+        var setCard = s[1];
+
+        React.useEffect(function () {
+            setCard(p);
+        }, [post.update_at]);
+
+        var st = statusOf(card.status);
+        var joinable = card.status !== 'ended' && card.join_url;
+
+        function refresh() {
+            if (!card.meeting_id) {
+                return;
+            }
+            request('GET', '/meetings/' + encodeURIComponent(card.meeting_id))
+                .then(function (data) {
+                    if (data && data.card) {
+                        setCard(data.card);
+                    }
+                }).catch(function () {
+                    // A card that cannot refresh keeps showing what it has.
+                });
+        }
+
+        React.useEffect(function () {
+            var handler = function (msg) {
+                if (msg && msg.data && msg.data.meeting_id === card.meeting_id) {
+                    refresh();
+                }
+            };
+            if (window.HoncoMeetingBus) {
+                window.HoncoMeetingBus.push(handler);
+            }
+            return function () {
+                if (window.HoncoMeetingBus) {
+                    var i = window.HoncoMeetingBus.indexOf(handler);
+                    if (i >= 0) {
+                        window.HoncoMeetingBus.splice(i, 1);
+                    }
+                }
+            };
+        }, [card.meeting_id]);
+
+        var btn = {
+            background: 'var(--button-bg)',
+            color: 'var(--button-color)',
+            border: 'none',
+            borderRadius: 4,
+            padding: '8px 18px',
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: 'pointer',
+            textDecoration: 'none',
+            display: 'inline-block',
+        };
+        var secondary = {
+            background: 'transparent',
+            color: 'var(--button-bg)',
+            border: '1px solid var(--button-bg)',
+            borderRadius: 4,
+            padding: '6px 14px',
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer',
+            marginRight: 8,
+        };
+
+        var actions = [];
+        if (card.recording_status === 'ready' && card.recording_file_id) {
+            actions.push(e('a', {
+                key: 'rec',
+                href: '/api/v4/files/' + card.recording_file_id,
+                target: '_blank',
+                rel: 'noopener noreferrer',
+                style: Object.assign({}, secondary, {textDecoration: 'none'}),
+            }, '🎬 View Recording'));
+        } else if (card.recording_status === 'failed') {
+            actions.push(e('span', {
+                key: 'recfail',
+                style: {fontSize: 12, color: 'var(--error-text)', marginRight: 8},
+            }, 'Recording failed'));
+        }
+        if (card.has_summary) {
+            actions.push(e('button', {
+                key: 'sum',
+                style: secondary,
+                onClick: function () {
+                    // The summary lives in the Honco panel; point the user
+                    // at it rather than duplicating it inside the card.
+                    if (window.HoncoOpenMeetingIntelligence) {
+                        window.HoncoOpenMeetingIntelligence(card.meeting_id);
+                    }
+                },
+            }, '📝 Meeting Summary'));
+        }
+
+        return e('div', {
+            style: {
+                border: '1px solid rgba(var(--center-channel-color-rgb), 0.16)',
+                borderRadius: 8,
+                padding: '14px 16px',
+                margin: '4px 0',
+                maxWidth: 520,
+                background: 'rgba(var(--center-channel-color-rgb), 0.03)',
+            },
+        }, [
+            e('div', {
+                key: 'title',
+                style: {display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2},
+            }, [
+                e('span', {key: 'i', style: {fontSize: 16}}, '🎥'),
+                e('span', {
+                    key: 't',
+                    style: {fontSize: 15, fontWeight: 700, color: 'var(--center-channel-color)'},
+                }, card.topic || 'Meeting'),
+            ]),
+
+            e('div', {
+                key: 'by',
+                style: {fontSize: 12, color: 'rgba(var(--center-channel-color-rgb), 0.72)', marginBottom: 8},
+            }, 'Started by ' + (card.creator_name || 'someone')),
+
+            e('div', {
+                key: 'status',
+                style: {display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, marginBottom: 10},
+            }, [
+                e('span', {
+                    key: 'dot',
+                    style: {
+                        width: 8, height: 8, borderRadius: '50%',
+                        background: st.dot, display: 'inline-block',
+                    },
+                }),
+                e('span', {key: 'l', style: {color: 'var(--center-channel-color)'}}, st.label),
+                card.scheduled_for ? e('span', {
+                    key: 'when',
+                    style: {color: 'rgba(var(--center-channel-color-rgb), 0.64)'},
+                }, '· ' + card.scheduled_for) : null,
+            ]),
+
+            (card.participant_count > 0 || (card.participants || []).length > 0) ? e('div', {
+                key: 'people',
+                style: {marginBottom: 12},
+            }, [
+                e('div', {
+                    key: 'count',
+                    style: {
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: 'rgba(var(--center-channel-color-rgb), 0.72)',
+                        marginBottom: 6,
+                    },
+                }, '👥 ' + card.participant_count + ' participant' + (card.participant_count === 1 ? '' : 's')),
+                e('div', {key: 'list'}, (card.participants || []).map(function (name, i) {
+                    return e('div', {
+                        key: i,
+                        style: {display: 'flex', alignItems: 'center', fontSize: 13, marginBottom: 4},
+                    }, [
+                        e(Avatar, {key: 'a', name: name}),
+                        e('span', {key: 'n', style: {color: 'var(--center-channel-color)'}}, name),
+                    ]);
+                })),
+            ]) : null,
+
+            joinable ? e('div', {key: 'join', style: {marginBottom: actions.length ? 12 : 0}},
+                e('a', {
+                    href: card.join_url,
+                    target: '_blank',
+                    rel: 'noopener noreferrer',
+                    style: btn,
+                }, 'Join Meeting')) : null,
+
+            actions.length ? e('div', {key: 'actions'}, actions) : null,
+        ]);
+    }
+
     function ChecklistIcon() {
         return e('i', {className: 'icon icon-check-circle-outline', style: {fontSize: 15}});
     }
@@ -836,6 +1068,33 @@
         // Kept for the panel to read the current team/user from the
         // webapp's own store rather than guessing from the URL.
         window.store = store;
+
+        // The meeting card. Registered as a post-type component so the
+        // card IS the post -- one post per meeting, updated in place,
+        // rather than a stream of near-identical messages.
+        if (typeof registry.registerPostTypeComponent === 'function') {
+            try {
+                registry.registerPostTypeComponent(MEETING_POST_TYPE, MeetingCard);
+            } catch (err) {
+                // An older server without post-type components still shows
+                // the post's markdown fallback, which carries the same facts.
+            }
+        }
+
+        // One websocket subscription for every card on screen. Cards add
+        // themselves to this bus rather than each opening their own.
+        window.HoncoMeetingBus = window.HoncoMeetingBus || [];
+        if (typeof registry.registerWebSocketEventHandler === 'function') {
+            registry.registerWebSocketEventHandler(MEETING_WS_EVENT, function (msg) {
+                window.HoncoMeetingBus.forEach(function (fn) {
+                    try {
+                        fn(msg);
+                    } catch (err) {
+                        /* one bad listener must not stop the rest */
+                    }
+                });
+            });
+        }
 
         // The App Bar is where current Mattermost surfaces plugin entry
         // points. Passing rhsComponent/rhsTitle makes the registry create
