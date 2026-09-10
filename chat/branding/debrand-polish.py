@@ -40,6 +40,10 @@ def rebrand_prose(text):
             continue
         chunk = URL_RE.sub("", chunk)
         chunk = EMAIL_RE.sub("", chunk)
+        # URL_RE only matches a scheme-prefixed link. A handful of strings
+        # use the bare domain as prose or an example ("Go to mattermost.com",
+        # "e.g. corp.mattermost.com") with no http(s):// to match on.
+        chunk = chunk.replace("mattermost.com", "honco.in")
         chunk = chunk.replace("Mattermost", BRAND)
         out.append(chunk)
     return "".join(out)

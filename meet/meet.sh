@@ -11,7 +11,16 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 FILES=(-f docker-compose.yml -f jibri.yml -f docker-compose.override.yml)
-DC=(sudo -n docker compose "${FILES[@]}")
+# ubuntu-3 (no sudo *and* no docker group membership for the deploy user)
+# needs sudo -n to reach the docker socket at all. A dev box where the user
+# is already in the docker group -- confirmed the case here -- has direct
+# access, and sudo -n would just fail outright (it cannot prompt). Prefer
+# direct access when it works rather than hardcoding either assumption.
+if docker info >/dev/null 2>&1; then
+    DC=(docker compose "${FILES[@]}")
+else
+    DC=(sudo -n docker compose "${FILES[@]}")
+fi
 
 case "${1:-ps}" in
 up)      shift; "${DC[@]}" up -d "$@" ;;

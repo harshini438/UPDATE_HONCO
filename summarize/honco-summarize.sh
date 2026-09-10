@@ -15,7 +15,12 @@ set -uo pipefail
 export HOME=/home/database
 CLAUDE=/home/database/.local/bin/claude
 
-MAX_CHARS="${MAX_CHARS:-120000}"
+# claude -p's context window is ~200K tokens (~4 chars/token => ~800K chars).
+# 600K leaves headroom for the prompt and the model's own output, and covers
+# every meeting we've actually seen (a dense 4-hour meeting runs ~150K
+# chars). The old 120K limit was sized for a much smaller context window and
+# was truncating meetings well under 2 hours long.
+MAX_CHARS="${MAX_CHARS:-600000}"
 LOG=/home/database/honco-summarize.log
 
 transcript=$(cat)
@@ -25,13 +30,17 @@ if [ -z "${transcript// }" ]; then
     exit 0
 fi
 
-# A long meeting can exceed a sensible single request. Truncate rather than
-# fail, and say so in the output so nobody mistakes a partial summary for a
-# complete one.
+# A long meeting can still exceed even that. Truncate rather than fail, and
+# say so in the output so nobody mistakes a partial summary for a complete
+# one. Keep both ends rather than just the head: decisions and action items
+# are disproportionately likely to land in the last few minutes, and a
+# head-only truncation was silently dropping every one of them.
 truncated=""
 if [ "${#transcript}" -gt "$MAX_CHARS" ]; then
-    transcript="${transcript:0:$MAX_CHARS}"
-    truncated=$'\n\n_(Transcript was truncated for length; this covers the earlier part of the meeting.)_'
+    HEAD=$(( MAX_CHARS * 2 / 3 ))
+    TAIL=$(( MAX_CHARS - HEAD ))
+    transcript="${transcript:0:$HEAD}"$'\n\n[... middle of the meeting omitted for length ...]\n\n'"${transcript: -$TAIL}"
+    truncated=$'\n\n_(Transcript was truncated for length; this covers the start and end of the meeting, with the middle omitted.)_'
 fi
 
 printf '%s summarise: %d chars\n' "$(date -Is)" "${#transcript}" >> "$LOG"

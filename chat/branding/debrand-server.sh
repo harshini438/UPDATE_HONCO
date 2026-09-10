@@ -26,6 +26,16 @@ rm -rf server/enterprise/elasticsearch \
        docs/develop/integrate/plugins/source-available-license
 echo "   server/enterprise now: $(ls server/enterprise)"
 
+# mmctl's compliance-export subcommand talks to the server's message-export
+# job type, which only exists behind the enterprise code just deleted above --
+# it would never work against this server anyway. Nothing else in mmctl
+# imports it (checked: only its own tests reference the deleted symbols), so
+# this is a clean removal, not a partial one.
+rm -f server/cmd/mmctl/commands/compliance_export.go \
+      server/cmd/mmctl/commands/compliance_export_test.go \
+      server/cmd/mmctl/commands/compliance_export_e2e_test.go
+echo "   mmctl compliance-export (enterprise-only, unbuildable) removed"
+
 echo "== 2. kill the phone-home: security update check =="
 # Upstream POSTs server id, build, DB type, OS, user/team/active-user counts to
 # securityupdatecheck.mattermost.com every 24h. Replaced with a no-op.
@@ -88,11 +98,15 @@ sed -i \
       server/channels/app/email/email.go
 
 echo "== 7. user-visible product name in translations =="
-# Display strings only. Import paths (github.com/mattermost/...) are NEVER
-# touched -- renaming those breaks every build.
-for f in server/i18n/en.json webapp/channels/src/i18n/en.json; do
-  [ -f "$f" ] && sed -i 's/Mattermost/'"$BRAND"'/g' "$f" && echo "   rebranded $f"
-done
+# Deliberately NOT done here with a blanket sed: server/i18n/en.json and
+# webapp/i18n/en.json contain Go template actions like {{.MattermostUsername}},
+# and a blind 's/Mattermost/Honco Chat/g' rewrites the identifier inside
+# {{...}} too -- {{.MattermostUsername}} becomes {{.Honco ChatUsername}} and
+# the server refuses to boot with `function "ChatUsername" not defined`. This
+# is exactly Trap 2 in DEBRAND.md. debrand-polish.py does this rebrand
+# correctly: it parses the JSON, rewrites only "translation" values, and
+# skips every {{...}} span. Run it right after this script.
+echo "   (translations handled by debrand-polish.py -- run that next)"
 
 echo
 echo "== VERIFY: runtime calls to vendor hosts still in non-test Go code =="

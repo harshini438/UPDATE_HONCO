@@ -36,7 +36,8 @@ export_env() {
     export MM_SQLSETTINGS_DRIVERNAME=postgres
     export MM_SQLSETTINGS_DATASOURCE="postgres://honco@127.0.0.1:5433/honcochat?sslmode=disable&connect_timeout=10"
     export MM_SERVICESETTINGS_LISTENADDRESS=":${PORT}"
-    export MM_SERVICESETTINGS_SITEURL="$(site_url)"
+    MM_SERVICESETTINGS_SITEURL="$(site_url)"
+    export MM_SERVICESETTINGS_SITEURL
     export MM_FILESETTINGS_DIRECTORY="$ROOT/run/data/"
     export MM_LOGSETTINGS_FILELOCATION="$ROOT/logs/"
     export MM_PLUGINSETTINGS_DIRECTORY="$ROOT/run/plugins/"
@@ -55,6 +56,11 @@ export_env() {
     # The /meet slash command points at a service on this same host. Mattermost
     # refuses to call loopback URLs unless they are named here.
     export MM_SERVICESETTINGS_ALLOWEDUNTRUSTEDINTERNALCONNECTIONS="127.0.0.1 localhost"
+    # Local-mode socket: lets `mmctl --local` (bot creation, token issuance,
+    # slash-command registration) run as full admin from this same host with
+    # no password or API token anywhere on disk. Mattermost binds it under
+    # $ROOT/run/ by default; nothing else needs to know it exists.
+    export MM_SERVICESETTINGS_ENABLELOCALMODE=true
 }
 
 pg_up()  { "$PGBIN/pg_ctl" -D "$PGDATA" status >/dev/null 2>&1; }
@@ -89,6 +95,13 @@ start_svc() {
         sleep 1
     done
     echo "meetsvc:   did NOT come up -- see $SVCLOG" >&2
+    # Unlike start_app/start_tunnel, this used to fall off the end here with
+    # no explicit return -- the function's exit status was then whatever the
+    # `echo` above returned, which is always 0. Under set -e that made a
+    # meetsvc startup failure invisible to every caller: `honcochat.sh start`
+    # and `publish` both reported overall success even when meetsvc never
+    # came up, because nothing downstream ever saw a non-zero status to fail on.
+    return 1
 }
 
 stop_svc() {

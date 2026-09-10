@@ -26,16 +26,16 @@ public-url.txt
 meet-schedule.json
 
 # Vendor source — re-cloned from upstream, never vendored here.
-server/
-mobile/
-push-proxy/
-whisper.cpp/
+/server/
+/mobile/
+/push-proxy/
+/whisper.cpp/
 honco-meet/docker-compose.yml
 node_modules/
 
 # Build output and runtime state.
-build/
-dist/
+/build/
+/dist/
 *.apk
 *.aab
 pgdata/
@@ -44,6 +44,7 @@ storage/
 logs/
 state/
 run/
+backups/
 models/
 vixy-stt-model/
 vixy-venv/
@@ -61,3 +62,10 @@ __pycache__/
 *.pyc
 *.log
 *.tmp
+
+# Downloaded toolchains and test scratch. The Go tarball is 67 MB of
+# upstream binary that any build can re-fetch, and a.txt is a curl cookie
+# jar left by an API test -- a session artifact, never source.
+go*.linux-amd64.tar.gz
+a.txt
+cookies*.txt

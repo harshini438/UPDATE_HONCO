@@ -45,6 +45,7 @@ python3 branding/debrand-sentry.py
 python3 branding/debrand-support.py
 python3 branding/debrand-polish.py
 python3 branding/debrand-webapp.py
+python3 branding/debrand-residual.py
 ./branding/debrand-mobile.sh
 python3 branding/debrand-mobile-sentry.py
 python3 branding/debrand-native-sentry.py

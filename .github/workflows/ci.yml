@@ -1,0 +1,224 @@
+name: CI
+
+# What this actually proves, and why the split:
+#   - "lint" runs on every push/PR and is fast (~1 min): script syntax only.
+#   - "debrand-and-build" is the real test -- clone real upstream Mattermost,
+#     run every de-brand script in the documented order, build the Go binary,
+#     run the exact `strings` check DEBRAND.md requires by hand today. This is
+#     slow (~10 min) because it's not faking anything: it is the rebuild
+#     procedure from chat/DEBRAND.md, automated. It runs on push to main, on
+#     PRs that touch chat/, and weekly (catches upstream drift breaking a
+#     de-brand script even when nobody here changed anything).
+#   - "backup-restore" spins up a real Postgres and exercises
+#     backup-honcochat.sh's full backup -> restore -> verify round trip.
+#   - The webapp (React) build is intentionally its own job on a longer leash
+#     (main + weekly only, not every PR): a clean install + webpack build of
+#     this webapp takes 10-15 minutes on its own, and most changes in this
+#     repo are to the bash/python scripts, not the webapp source itself.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 1'   # Monday 03:00 UTC -- catches upstream breaking a script with no PR to trigger on
+
+jobs:
+  lint:
+    name: Lint scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y shellcheck
+      - name: Shellcheck every script
+        # --severity=warning: several scripts use `A && B || C` deliberately
+        # as an "always succeed, log if you can" idiom (stop/status paths
+        # that must never abort the script under set -e). shellcheck's
+        # SC2015 flags that pattern at info level on principle; it's correct
+        # here. Warnings and above still fail the build.
+        run: |
+          fail=0
+          while IFS= read -r -d '' f; do
+            echo "::group::$f"
+            shellcheck -x --severity=warning "$f" || fail=1
+            echo "::endgroup::"
+          done < <(find . -name '*.sh' -not -path './.git/*' -print0)
+          exit $fail
+      - name: Python syntax check
+        run: |
+          find . -name '*.py' -not -path './.git/*' -print0 \
+            | xargs -0 -n1 python3 -m py_compile
+      - name: No CRLF line endings
+        # This is the exact bug class that broke every one of these scripts
+        # the first time they were run on a Windows-checked-out clone under
+        # WSL: `set -euo pipefail` with a trailing \r becomes an "invalid
+        # option name" error that has nothing to do with pipefail. .gitattributes
+        # is supposed to prevent this at checkout; this job is the backstop.
+        run: |
+          hits=$(find . \( -name '*.sh' -o -name '*.py' \) -not -path './.git/*' \
+                 -exec grep -lP '\r$' {} \; || true)
+          if [ -n "$hits" ]; then
+            echo "CRLF line endings found (breaks bash on Linux):"
+            echo "$hits"
+            exit 1
+          fi
+
+  debrand-and-build:
+    name: De-brand + build server (real upstream)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: honco-workspace
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.7'
+      - name: Clone Mattermost upstream (shallow)
+        run: |
+          mkdir -p "$HOME/honco-chat"
+          git clone --depth 1 https://github.com/mattermost/mattermost.git "$HOME/honco-chat/server"
+      - name: Run de-brand scripts (documented order)
+        working-directory: honco-workspace/chat
+        run: |
+          ./branding/debrand-server.sh
+          python3 branding/patch_push.py
+          python3 branding/debrand-sentry.py
+          python3 branding/debrand-support.py
+          python3 branding/debrand-polish.py
+          python3 branding/debrand-webapp.py
+          python3 branding/debrand-residual.py
+      - name: go work setup (Trap 1 in DEBRAND.md)
+        run: |
+          cd "$HOME/honco-chat/server/server"
+          go work init
+          go work use .
+          go work use ./public
+      - name: Build honcochat
+        run: |
+          cd "$HOME/honco-chat/server/server"
+          mkdir -p "$HOME/honco-chat/build"
+          GOFLAGS=-buildvcs=false go build -p 4 -o "$HOME/honco-chat/build/honcochat" ./cmd/mattermost
+      - name: Build mmctl (compliance_export.go removed by debrand-server.sh)
+        run: |
+          cd "$HOME/honco-chat/server/server"
+          GOFLAGS=-buildvcs=false go build -p 4 -o "$HOME/honco-chat/build/mmctl" ./cmd/mmctl
+      - name: Verify zero vendor telemetry (the check DEBRAND.md requires)
+        run: |
+          hits=$(strings "$HOME/honco-chat/build/honcochat" | grep -E 'mattermost\.(com|io)|ingest.*sentry\.io' || true)
+          if [ -n "$hits" ]; then
+            echo "::error::vendor telemetry strings survived de-branding:"
+            echo "$hits"
+            exit 1
+          fi
+          echo "clean -- zero vendor URLs, zero Sentry DSN"
+      - name: Verify branding actually landed (not just absence of vendor strings)
+        run: |
+          go run ./server/cmd/mattermost --help 2>&1 | grep -q "Honco Chat" \
+            || { echo "::error::CLI help text does not mention Honco Chat"; exit 1; }
+        working-directory: /home/runner/honco-chat
+        continue-on-error: true   # informational: CLI help wording can legitimately change upstream
+
+  webapp-build:
+    name: Build webapp (React) -- main + weekly only
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    needs: debrand-and-build
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: honco-workspace
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Clone Mattermost upstream (shallow)
+        run: |
+          mkdir -p "$HOME/honco-chat"
+          git clone --depth 1 https://github.com/mattermost/mattermost.git "$HOME/honco-chat/server"
+      - name: Run de-brand scripts
+        working-directory: honco-workspace/chat
+        run: |
+          ./branding/debrand-server.sh
+          python3 branding/patch_push.py
+          python3 branding/debrand-sentry.py
+          python3 branding/debrand-support.py
+          python3 branding/debrand-polish.py
+          python3 branding/debrand-webapp.py
+          python3 branding/debrand-residual.py
+      - name: npm install-scripts approve --all && npm ci
+        # npm 11 blocks install scripts by default -- skips @swc/core and the
+        # react-bootstrap patch-package postinstall if this step is missed.
+        working-directory: /home/runner/honco-chat/server/webapp
+        run: |
+          npm install-scripts approve --all
+          npm ci
+      - name: npm run build
+        working-directory: /home/runner/honco-chat/server/webapp
+        run: npm run build
+      - name: Verify branding in built shell
+        run: |
+          grep -q '<title>Honco Chat</title>' \
+            "$HOME/honco-chat/server/webapp/channels/dist/root.html" \
+            || { echo "::error::root.html title is not Honco Chat"; exit 1; }
+
+  backup-restore:
+    name: Backup / restore round trip
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: honco
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Grant CREATEDB (needed for restore-into-scratch-db)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y postgresql-client
+          psql -h 127.0.0.1 -p 5433 -U honco -d postgres -c "ALTER ROLE honco CREATEDB;"
+          createdb -h 127.0.0.1 -p 5433 -U honco honcochat
+          # a couple of tables so the dump isn't empty -- the real schema
+          # comes from the Go server's own migrations, out of scope here
+          psql -h 127.0.0.1 -p 5433 -U honco -d honcochat -c \
+            "CREATE TABLE t1(id serial primary key, v text); INSERT INTO t1(v) VALUES ('a'),('b');"
+      - name: Run backup
+        env:
+          ROOT: /home/runner/honco-chat
+          PGBIN: /usr/lib/postgresql/16/bin
+          PGHOST: 127.0.0.1
+          PGPORT: '5433'
+          PGUSER: honco
+          PGDATABASE: honcochat
+        run: |
+          mkdir -p "$ROOT"
+          bash chat/backup-honcochat.sh backup
+      - name: Restore into a scratch database and verify
+        env:
+          ROOT: /home/runner/honco-chat
+          PGBIN: /usr/lib/postgresql/16/bin
+        run: |
+          DUMP=$(ls -1t "$ROOT"/backups/honcochat-*.dump | head -1)
+          bash chat/backup-honcochat.sh restore "$DUMP" honcochat_ci_restore
+          COUNT=$(psql -h 127.0.0.1 -p 5433 -U honco -d honcochat_ci_restore -tAc \
+            "SELECT count(*) FROM t1;")
+          [ "$COUNT" = "2" ] || { echo "::error::restore did not round-trip the data (got $COUNT rows)"; exit 1; }
+          echo "restore verified: $COUNT rows"
+      - name: Refuse to restore over the live database (safety check)
+        env:
+          ROOT: /home/runner/honco-chat
+          PGBIN: /usr/lib/postgresql/16/bin
+        run: |
+          DUMP=$(ls -1t "$ROOT"/backups/honcochat-*.dump | head -1)
+          if bash chat/backup-honcochat.sh restore "$DUMP" honcochat 2>/tmp/err; then
+            echo "::error::restore into the live database name should have been refused"
+            exit 1
+          fi
+          grep -q "refusing to restore over the live database" /tmp/err

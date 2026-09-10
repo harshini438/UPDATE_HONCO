@@ -1,0 +1,4 @@
+# Compiled plugin binaries -- produced by `go build`, never committed.
+server/dist/
+webapp/node_modules/
+*.tar.gz

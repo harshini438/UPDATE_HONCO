@@ -1,0 +1,14 @@
+# Every script here runs on Linux (ubuntu3, ubuntu-3, mother). A CRLF line
+# ending is invisible in most editors but breaks bash outright -- `set -euo
+# pipefail` becomes `set -euo pipefail\r`, which bash reports as "pipefail:
+# invalid option name" with no hint that the problem is line endings, not the
+# option itself. Force LF regardless of what a Windows checkout would
+# otherwise produce.
+*.sh   text eol=lf
+*.py   text eol=lf
+*.conf text eol=lf
+*.env  text eol=lf
+
+# Everything else: normalize on commit, checkout in whatever the platform
+# prefers -- these are read by humans and tools on any OS, not by bash.
+* text=auto

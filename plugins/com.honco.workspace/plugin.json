@@ -1,0 +1,87 @@
+{
+    "id": "com.honco.workspace",
+    "name": "Honco Workspace",
+    "description": "Honco-specific workspace features for Honco Chat: team-scoped task management, meeting recording integration, remote support workflow and Honco administration. Built as a plugin so that upstream Mattermost pulls and the idempotent de-brand scripts never collide with it.",
+    "homepage_url": "https://chat.honco.in",
+    "support_url": "https://chat.honco.in/help",
+    "version": "0.1.0",
+    "min_server_version": "9.5.0",
+    "webapp": {
+        "bundle_path": "webapp/dist/main.js"
+    },
+    "server": {
+        "executables": {
+            "linux-amd64": "server/dist/plugin-linux-amd64"
+        }
+    },
+    "settings_schema": {
+        "header": "Honco Workspace settings. Secrets configured here are stored in the Mattermost config and are never written to logs.",
+        "footer": "",
+        "settings": [
+            {
+                "key": "JibriCallbackSecret",
+                "display_name": "Jibri callback secret",
+                "type": "text",
+                "help_text": "Shared secret the Jibri finalize hook must present in the X-Jibri-Callback-Secret header. Leave blank to reject all recording callbacks.",
+                "placeholder": "",
+                "default": null,
+                "secret": true
+            },
+            {
+                "key": "MeetServiceSecret",
+                "display_name": "Meet service secret",
+                "type": "text",
+                "help_text": "Shared secret meetsvc.py must present in the X-Honco-Service-Secret header when registering a meeting room. Leave blank to reject all registrations.",
+                "placeholder": "",
+                "default": null,
+                "secret": true
+            },
+            {
+                "key": "SummarizerCommand",
+                "display_name": "Summarizer command (optional)",
+                "type": "text",
+                "help_text": "Absolute path to a local executable that reads a conversation on stdin and writes markdown meeting notes on stdout -- the honco-summarize.sh contract. When set, this is used instead of SSH. Leave blank to reach the summarizer over SSH.",
+                "placeholder": "/opt/honco/honco-summarize.sh",
+                "default": null
+            },
+            {
+                "key": "SummarizerHost",
+                "display_name": "Summarizer host",
+                "type": "text",
+                "help_text": "Host running the Claude summarizer behind its forced-command SSH key (the 'mother' host). Used only when Summarizer command is blank.",
+                "placeholder": "192.168.2.150",
+                "default": "192.168.2.150"
+            },
+            {
+                "key": "SummarizerPort",
+                "display_name": "Summarizer SSH port",
+                "type": "number",
+                "help_text": "SSH port on the summarizer host.",
+                "default": 31013
+            },
+            {
+                "key": "SummarizerUser",
+                "display_name": "Summarizer SSH user",
+                "type": "text",
+                "help_text": "SSH user on the summarizer host. Its authorized_keys entry is pinned to honco-summarize.sh by a forced command, so this account cannot be used for anything else.",
+                "placeholder": "database",
+                "default": "database"
+            },
+            {
+                "key": "SummarizerKeyPath",
+                "display_name": "Summarizer SSH key path",
+                "type": "text",
+                "help_text": "Absolute path to the private key used to reach the summarizer. The key is read by ssh, never by this plugin, and is never logged.",
+                "placeholder": "/home/harshi/.ssh/honco-summarize",
+                "default": null
+            },
+            {
+                "key": "SummarizerTimeoutSeconds",
+                "display_name": "Summarizer timeout (seconds)",
+                "type": "number",
+                "help_text": "How long to wait for a summary before giving up and marking the generation failed. Clamped to 10-900.",
+                "default": 300
+            }
+        ]
+    }
+}

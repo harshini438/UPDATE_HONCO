@@ -98,8 +98,15 @@ if os.path.exists(wp):
 # debrand-polish.py never sees them, and they end up as literals in the shipped
 # JS bundle -- `strings dist/*.js` is what surfaces them. Tests and stories are
 # skipped: they never ship, and some assert on the exact upstream string.
+#
+# The first cut of this only matched https://. A handful of System Console
+# help links (SSO/SAML setup, theme colours, manage-languages) use a plain
+# http:// link and slipped straight through -- `strings` on the built bundle
+# is what actually caught it, source review alone did not.
 BASE = os.environ.get("HONCO_BASE", "https://chat.honco.in").rstrip("/")
-VENDOR_URL = re.compile(r"https://[a-z0-9.-]*mattermost\.(?:com|io)[^\"'\s)]*")
+VENDOR_URL = re.compile(r"https?://[a-z0-9.-]*mattermost\.(?:com|io)[^\"'\s)]*")
+VENDOR_EMAIL = re.compile(r"[a-z][a-z0-9._%+-]*@mattermost\.com")
+SUPPORT_EMAIL = os.environ.get("HONCO_SUPPORT_EMAIL", "it@honco.in")
 
 
 def replacement(m):
@@ -108,6 +115,22 @@ def replacement(m):
         return BASE + "/apps"
     return BASE + "/help"
 
+
+# A few more vendor strings that are neither a URL nor an email: an "e.g."
+# example domain shown as placeholder/help text in two admin console fields,
+# unrelated to any of the config-driven links debrand-support.py handles.
+LITERAL_FIXES = {
+    'corp.mattermost.com, mattermost.com': 'corp.honco.in, honco.in',
+    '"mattermost.com") or list': '"honco.in") or list',
+    'E.g.: "corp.mattermost.com, mattermost.com"': 'E.g.: "corp.honco.in, honco.in"',
+    'E.g.: "globalrelay@mattermost.com"': 'E.g.: "globalrelay@honco.in"',
+    # Cloud-billing "delete workspace" flow -- unreachable without Cloud
+    # licensing, which we never enable, but the string still ships.
+    "'Go to mattermost.com'": "'Go to Honco Chat'",
+    # message_html_to_component.tsx: a throwaway base URL for the URL()
+    # constructor's relative-resolution math, never navigated to or shown.
+    "new URL(url, 'http://mattermost.com')": "new URL(url, 'http://honco.in')",
+}
 
 skip = (".test.ts", ".test.tsx", ".stories.tsx", ".stories.ts")
 patched = 0
@@ -121,10 +144,13 @@ for dirpath, dirs, files in os.walk(os.path.join(W, "channels/src")):
         if "mattermost.com" not in body and "mattermost.io" not in body:
             continue
         new = VENDOR_URL.sub(replacement, body)
+        new = VENDOR_EMAIL.sub(SUPPORT_EMAIL, new)
+        for old_lit, new_lit in LITERAL_FIXES.items():
+            new = new.replace(old_lit, new_lit)
         if new != body:
             open(fp, "w", encoding="utf-8").write(new)
             patched += 1
-print("rewrote vendor URLs in %d shipped source files" % patched)
+print("rewrote vendor URLs/emails/examples in %d shipped source files" % patched)
 
 print("\nverify: remaining literal 'Mattermost' in the static shell")
 for f in [os.path.join(W, "channels/src/root.html")]:
