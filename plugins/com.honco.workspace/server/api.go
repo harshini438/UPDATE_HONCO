@@ -106,6 +106,17 @@ func (p *Plugin) newRouter() *mux.Router {
 	api.HandleFunc("/meetings/{meeting_id}", p.handleGetMeeting).Methods(http.MethodGet)
 	api.HandleFunc("/channels/{channel_id}/active-meetings", p.handleListActiveMeetings).Methods(http.MethodGet)
 
+	// Remote support. Every one of these re-derives the caller from the
+	// session and re-checks agent membership against Mattermost.
+	api.HandleFunc("/support/requests", p.handleCreateSupportRequest).Methods(http.MethodPost)
+	api.HandleFunc("/support/requests", p.handleListSupportRequests).Methods(http.MethodGet)
+	api.HandleFunc("/support/requests/{request_id}", p.handleGetSupportRequest).Methods(http.MethodGet)
+	api.HandleFunc("/support/requests/{request_id}/accept", p.handleAcceptSupport).Methods(http.MethodPost)
+	api.HandleFunc("/support/requests/{request_id}/reject", p.handleRejectSupport).Methods(http.MethodPost)
+	api.HandleFunc("/support/requests/{request_id}/start", p.handleStartSupport).Methods(http.MethodPost)
+	api.HandleFunc("/support/requests/{request_id}/end", p.handleEndSupport).Methods(http.MethodPost)
+	api.HandleFunc("/support/requests/{request_id}/cancel", p.handleCancelSupport).Methods(http.MethodPost)
+
 	root.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusNotFound, errorBody{Error: "no such endpoint"})
 	})

@@ -105,6 +105,22 @@
                 "help_text": "The Jitsi XMPP domain, used to address rooms when asking for participants. Matches XMPP_DOMAIN in the Jitsi .env.",
                 "placeholder": "meet.jitsi",
                 "default": "meet.jitsi"
+            },
+            {
+                "key": "SupportTeamName",
+                "display_name": "Support team (URL name)",
+                "type": "text",
+                "help_text": "Team containing the remote-support channel. Together with the channel below this decides who the support agents are. Leave either blank and nobody can accept a support request -- requests can still be raised, but they will wait.",
+                "placeholder": "harshini-sharma",
+                "default": null
+            },
+            {
+                "key": "SupportChannelName",
+                "display_name": "Support channel (URL name)",
+                "type": "text",
+                "help_text": "Members of this channel are the remote-support agents. Add or remove an agent by adding or removing them from the channel. This deliberately does NOT mean every system admin: administering the server and doing desk-side support are different jobs.",
+                "placeholder": "honco-support",
+                "default": null
             }
         ]
     }

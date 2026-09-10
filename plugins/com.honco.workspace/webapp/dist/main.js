@@ -1152,6 +1152,356 @@
     // One entry point, two views. A second App Bar icon for a panel this
     // size would crowd the bar; tabs are what Mattermost's own RHS uses
     // for the same problem.
+    // --- Remote Support ----------------------------------------------------
+
+    // Honco manages the workflow; RustDesk makes the connection.
+    //
+    // RustDesk OSS exposes no API, so there is deliberately no "connect"
+    // button that pretends to drive it. The card tells people where they
+    // are in the process and leaves the connection to the RustDesk client,
+    // which is the only thing that can actually make one.
+
+    var SUPPORT_POST_TYPE = 'custom_honco_support';
+    var SUPPORT_WS_EVENT = 'custom_' + PLUGIN_ID + '_support_updated';
+
+    var SUPPORT_STATUS = {
+        open: {label: 'Waiting for support', dot: 'var(--away-indicator, #ffbc42)'},
+        accepted: {label: 'Accepted', dot: 'var(--online-indicator, #3db887)'},
+        active: {label: 'Session active', dot: 'var(--online-indicator, #3db887)'},
+        ended: {label: 'Session ended', dot: 'rgba(var(--center-channel-color-rgb), 0.32)'},
+        cancelled: {label: 'Cancelled', dot: 'rgba(var(--center-channel-color-rgb), 0.32)'},
+        rejected: {label: 'Declined', dot: 'rgba(var(--center-channel-color-rgb), 0.32)'},
+    };
+
+    function supportStatus(v) {
+        return SUPPORT_STATUS[v] || SUPPORT_STATUS.ended;
+    }
+
+    function StatusDot(props) {
+        var st = supportStatus(props.status);
+        return e('div', {
+            style: {display: 'flex', alignItems: 'center', gap: 6, fontSize: 13},
+        }, [
+            e('span', {
+                key: 'd',
+                style: {
+                    width: 8, height: 8, borderRadius: '50%',
+                    background: st.dot, display: 'inline-block', flexShrink: 0,
+                },
+            }),
+            e('span', {key: 'l', style: {color: 'var(--center-channel-color)'}}, st.label),
+        ]);
+    }
+
+    // Everything RustDesk-related lives here, so there is exactly one place
+    // that describes how to connect -- and it never claims Honco did it.
+    function RustDeskHint() {
+        return e('div', {
+            style: {
+                marginTop: 10,
+                padding: '8px 10px',
+                borderRadius: 4,
+                background: 'rgba(var(--center-channel-color-rgb), 0.06)',
+                fontSize: 12,
+                lineHeight: 1.5,
+                color: 'rgba(var(--center-channel-color-rgb), 0.8)',
+            },
+        }, [
+            e('div', {key: 't', style: {fontWeight: 600, marginBottom: 2}}, 'Connecting'),
+            e('div', {key: 'b'},
+                'Open the RustDesk client and share your ID with the agent. ' +
+                'Honco tracks the session; it never sees or stores your RustDesk password.'),
+        ]);
+    }
+
+    function SupportPanel() {
+        var s0 = React.useState({requests: [], isAgent: false, loading: true, error: null});
+        var state = s0[0];
+        var setState = s0[1];
+
+        var f = React.useState({issue: '', open: false, saving: false, error: null});
+        var form = f[0];
+        var setForm = f[1];
+
+        var ctxState = React.useState({teamId: null, userId: null, channelId: null});
+        var ctx = ctxState[0];
+        var setCtx = ctxState[1];
+
+        React.useEffect(function () {
+            try {
+                var s = window.store ? window.store.getState() : null;
+                if (s) {
+                    setCtx({
+                        teamId: s.entities.teams.currentTeamId,
+                        userId: s.entities.users.currentUserId,
+                        channelId: s.entities.channels.currentChannelId,
+                    });
+                }
+            } catch (err) {
+                setCtx({teamId: null, userId: null, channelId: null});
+            }
+        }, []);
+
+        var load = React.useCallback(function (teamId) {
+            if (!teamId) {
+                return;
+            }
+            request('GET', '/support/requests?team_id=' + encodeURIComponent(teamId))
+                .then(function (data) {
+                    setState({
+                        requests: (data && data.requests) || [],
+                        isAgent: Boolean(data && data.is_agent),
+                        loading: false,
+                        error: null,
+                    });
+                }).catch(function (err) {
+                    setState({requests: [], isAgent: false, loading: false, error: err.message});
+                });
+        }, []);
+
+        React.useEffect(function () {
+            load(ctx.teamId);
+        }, [ctx.teamId, load]);
+
+        // Live updates: the server only sends these to people involved.
+        React.useEffect(function () {
+            var handler = function () {
+                load(ctx.teamId);
+            };
+            window.HoncoSupportBus = window.HoncoSupportBus || [];
+            window.HoncoSupportBus.push(handler);
+            return function () {
+                var i = window.HoncoSupportBus.indexOf(handler);
+                if (i >= 0) {
+                    window.HoncoSupportBus.splice(i, 1);
+                }
+            };
+        }, [ctx.teamId, load]);
+
+        function create(ev) {
+            ev.preventDefault();
+            setForm(Object.assign({}, form, {saving: true, error: null}));
+            request('POST', '/support/requests', {
+                team_id: ctx.teamId,
+                channel_id: ctx.channelId || '',
+                issue: form.issue,
+            }).then(function () {
+                setForm({issue: '', open: false, saving: false, error: null});
+                load(ctx.teamId);
+            }).catch(function (err) {
+                setForm(Object.assign({}, form, {saving: false, error: err.message}));
+            });
+        }
+
+        function act(id, action) {
+            request('POST', '/support/requests/' + id + '/' + action)
+                .then(function () {
+                    load(ctx.teamId);
+                }).catch(function (err) {
+                    setState(function (p) {
+                        return {requests: p.requests, isAgent: p.isAgent, loading: false, error: err.message};
+                    });
+                });
+        }
+
+        var btn = {
+            background: 'var(--button-bg)',
+            color: 'var(--button-color)',
+            border: 'none',
+            borderRadius: 4,
+            padding: '6px 14px',
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: 'pointer',
+        };
+        var ghost = Object.assign({}, btn, {
+            background: 'transparent',
+            color: 'var(--center-channel-color)',
+            border: '1px solid rgba(var(--center-channel-color-rgb), 0.24)',
+        });
+
+        function actionsFor(r) {
+            var out = [];
+            var mine = r.requester_id === ctx.userId;
+            var isMyAssignment = r.agent_id === ctx.userId;
+
+            // These mirror the server's rules. The server decides; this
+            // only avoids offering a button that would be refused.
+            if (state.isAgent && r.status === 'open') {
+                out.push(e('button', {key: 'acc', style: btn,
+                    onClick: function () { act(r.id, 'accept'); }}, 'Accept Request'));
+                out.push(e('button', {key: 'rej', style: ghost,
+                    onClick: function () { act(r.id, 'reject'); }}, 'Decline'));
+            }
+            if (isMyAssignment && r.status === 'accepted') {
+                out.push(e('button', {key: 'start', style: btn,
+                    onClick: function () { act(r.id, 'start'); }}, 'Start Session'));
+            }
+            if ((isMyAssignment || mine) && (r.status === 'active' || r.status === 'accepted')) {
+                out.push(e('button', {key: 'end', style: ghost,
+                    onClick: function () { act(r.id, 'end'); }}, 'End Session'));
+            }
+            if (mine && (r.status === 'open' || r.status === 'accepted')) {
+                out.push(e('button', {key: 'can', style: ghost,
+                    onClick: function () { act(r.id, 'cancel'); }}, 'Cancel'));
+            }
+            return out;
+        }
+
+        if (state.loading) {
+            return e('div', {style: {padding: 16, fontSize: 13, opacity: 0.7}}, 'Loading support requests…');
+        }
+
+        return e('div', {style: {display: 'flex', flexDirection: 'column', height: '100%'}}, [
+            e('div', {
+                key: 'bar',
+                style: {
+                    padding: '8px 12px',
+                    borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.12)',
+                    display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+                },
+            }, [
+                e('span', {key: 'h', style: {fontSize: 13, fontWeight: 600}}, '🛠 Remote Support'),
+                state.isAgent ? e('span', {
+                    key: 'badge',
+                    style: {
+                        fontSize: 11, padding: '2px 6px', borderRadius: 3,
+                        background: 'rgba(var(--center-channel-color-rgb), 0.08)',
+                        color: 'rgba(var(--center-channel-color-rgb), 0.72)',
+                    },
+                }, 'Support agent') : null,
+                e('button', {
+                    key: 'new',
+                    style: Object.assign({}, btn, {marginLeft: 'auto', padding: '5px 12px', fontSize: 12}),
+                    onClick: function () {
+                        setForm(Object.assign({}, form, {open: !form.open, error: null}));
+                    },
+                }, form.open ? 'Cancel' : 'Request Support'),
+            ]),
+
+            form.open ? e('form', {
+                key: 'form',
+                onSubmit: create,
+                style: {
+                    padding: '10px 12px',
+                    borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.12)',
+                    background: 'rgba(var(--center-channel-color-rgb), 0.03)',
+                },
+            }, [
+                e('div', {key: 'lbl', style: {fontSize: 12, marginBottom: 4, opacity: 0.8}},
+                    'What is going wrong?'),
+                e('textarea', {
+                    key: 'issue',
+                    'aria-label': 'Issue description',
+                    placeholder: 'My screen is not connecting',
+                    value: form.issue,
+                    maxLength: 1024,
+                    onChange: function (ev) {
+                        setForm(Object.assign({}, form, {issue: ev.target.value}));
+                    },
+                    style: {
+                        width: '100%', boxSizing: 'border-box', minHeight: 60, resize: 'vertical',
+                        padding: '6px 8px', marginBottom: 6, borderRadius: 4, fontSize: 13,
+                        border: '1px solid rgba(var(--center-channel-color-rgb), 0.24)',
+                        background: 'var(--center-channel-bg)', color: 'var(--center-channel-color)',
+                    },
+                }),
+                e('div', {
+                    key: 'note',
+                    style: {fontSize: 11, opacity: 0.7, marginBottom: 8},
+                }, 'Never include passwords. Honco does not need them and will not store them.'),
+                form.error ? e('div', {
+                    key: 'err', style: {color: 'var(--error-text)', fontSize: 12, marginBottom: 6},
+                }, form.error) : null,
+                e('button', {
+                    key: 'go', type: 'submit', disabled: form.saving,
+                    style: Object.assign({}, btn, {opacity: form.saving ? 0.6 : 1}),
+                }, form.saving ? 'Sending…' : 'Request Support'),
+            ]) : null,
+
+            state.error ? e('div', {
+                key: 'err', style: {padding: '10px 12px', color: 'var(--error-text)', fontSize: 13},
+            }, state.error) : null,
+
+            e('div', {key: 'list', style: {overflowY: 'auto', flex: 1}},
+                state.requests.length === 0 ? e('div', {
+                    style: {padding: 16, fontSize: 13, opacity: 0.7},
+                }, 'No support requests. Use "Request Support" if you need help.') :
+                    state.requests.map(function (r) {
+                        var actions = actionsFor(r);
+                        return e('div', {
+                            key: r.id,
+                            // A stable hook for the row, so tests (and any
+                            // future deep link) can address one request
+                            // rather than guessing at DOM structure.
+                            'data-request-id': r.id,
+                            style: {
+                                padding: '10px 12px',
+                                borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.08)',
+                            },
+                        }, [
+                            e(StatusDot, {key: 'st', status: r.status}),
+                            e('div', {
+                                key: 'who',
+                                style: {fontSize: 12, marginTop: 4, color: 'rgba(var(--center-channel-color-rgb), 0.72)'},
+                            }, 'Requested by ' + (r.requester_id === ctx.userId ? 'you' : 'a colleague') +
+                               (r.agent_id ? ' · agent assigned' : '')),
+                            r.issue ? e('div', {
+                                key: 'issue',
+                                style: {
+                                    fontSize: 13, marginTop: 4, whiteSpace: 'pre-wrap',
+                                    wordBreak: 'break-word', color: 'var(--center-channel-color)',
+                                },
+                            }, r.issue) : null,
+                            r.status === 'active' ? e(RustDeskHint, {key: 'hint'}) : null,
+                            actions.length ? e('div', {
+                                key: 'actions',
+                                style: {display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8},
+                            }, actions) : null,
+                        ]);
+                    })),
+        ]);
+    }
+
+    // The channel card. Read-only on purpose: the actions live in the panel
+    // where the viewer's own role is known, rather than offering buttons in
+    // a channel to people who cannot use them.
+    function SupportCard(props) {
+        var post = props.post || {};
+        var c = (post.props && post.props.honco_support) || {};
+        return e('div', {
+            style: {
+                border: '1px solid rgba(var(--center-channel-color-rgb), 0.16)',
+                borderRadius: 8,
+                padding: '14px 16px',
+                margin: '4px 0',
+                maxWidth: 520,
+                background: 'rgba(var(--center-channel-color-rgb), 0.03)',
+            },
+        }, [
+            e('div', {
+                key: 'title',
+                style: {fontSize: 15, fontWeight: 700, marginBottom: 2, color: 'var(--center-channel-color)'},
+            }, '🛠 Remote Support Request'),
+            e('div', {
+                key: 'by',
+                style: {fontSize: 12, color: 'rgba(var(--center-channel-color-rgb), 0.72)', marginBottom: 8},
+            }, 'Requested by ' + (c.requester_name || 'someone')),
+            e(StatusDot, {key: 'st', status: c.status}),
+            c.issue ? e('div', {
+                key: 'issue',
+                style: {
+                    fontSize: 13, marginTop: 8, whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word', color: 'var(--center-channel-color)',
+                },
+            }, c.issue) : null,
+            c.agent_name ? e('div', {
+                key: 'agent',
+                style: {fontSize: 12, marginTop: 6, color: 'rgba(var(--center-channel-color-rgb), 0.72)'},
+            }, 'Agent: ' + c.agent_name) : null,
+        ]);
+    }
+
     function HoncoPanel() {
         // Open on Meeting Intelligence when this channel has a remembered
         // selection, so a refresh returns the user to the summary they were
@@ -1209,10 +1559,10 @@
                     display: 'flex',
                     borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.12)',
                 },
-            }, [tabButton('tasks', 'Tasks'), tabButton('meetings', 'Meeting Intelligence')]),
+            }, [tabButton('tasks', 'Tasks'), tabButton('meetings', 'Meeting Intelligence'), tabButton('support', 'Support')]),
 
             e('div', {key: 'panel', style: {flex: 1, minHeight: 0}},
-                tab === 'tasks' ? e(TasksPanel) : e(MeetingPanel)),
+                tab === 'tasks' ? e(TasksPanel) : (tab === 'meetings' ? e(MeetingPanel) : e(SupportPanel))),
         ]);
     }
 
@@ -1488,6 +1838,7 @@
         if (typeof registry.registerPostTypeComponent === 'function') {
             try {
                 registry.registerPostTypeComponent(MEETING_POST_TYPE, MeetingCard);
+                registry.registerPostTypeComponent(SUPPORT_POST_TYPE, SupportCard);
             } catch (err) {
                 // An older server without post-type components still shows
                 // the post's markdown fallback, which carries the same facts.
@@ -1497,9 +1848,19 @@
         // One websocket subscription for every card on screen. Cards add
         // themselves to this bus rather than each opening their own.
         window.HoncoMeetingBus = window.HoncoMeetingBus || [];
+        window.HoncoSupportBus = window.HoncoSupportBus || [];
         if (typeof registry.registerWebSocketEventHandler === 'function') {
             registry.registerWebSocketEventHandler(MEETING_WS_EVENT, function (msg) {
                 window.HoncoMeetingBus.forEach(function (fn) {
+                    try {
+                        fn(msg);
+                    } catch (err) {
+                        /* one bad listener must not stop the rest */
+                    }
+                });
+            });
+            registry.registerWebSocketEventHandler(SUPPORT_WS_EVENT, function (msg) {
+                window.HoncoSupportBus.forEach(function (fn) {
                     try {
                         fn(msg);
                     } catch (err) {

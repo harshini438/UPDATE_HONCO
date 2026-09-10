@@ -41,6 +41,11 @@ type configuration struct {
 	MeetPublicURL  string
 	ProsodyHTTPURL string
 	XMPPDomain     string
+
+	// Remote support. Agents are the members of this channel -- not every
+	// system admin. Unset means nobody is an agent, which fails closed.
+	SupportTeamName    string
+	SupportChannelName string
 }
 
 // summarizerTimeout keeps the configured value inside a sane band. A zero

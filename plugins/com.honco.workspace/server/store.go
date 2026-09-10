@@ -221,6 +221,59 @@ var migrations = []migration{
 				ON honco_meeting_participants (meeting_id, present)`,
 		},
 	},
+	{
+		version: 6,
+		name:    "create_honco_support",
+		stmts: []string{
+			// A remote-support request and its lifecycle.
+			//
+			// Deliberately absent: anything that could authenticate a remote
+			// session. No RustDesk password, no device credential, no relay
+			// secret, no token. RustDesk OSS exposes no API for Honco to
+			// drive it with, and even if it did, a support workflow has no
+			// business holding the keys to someone's desktop. This table
+			// records who asked, who took it, and when -- nothing that could
+			// be used to connect to anyone.
+			`CREATE TABLE IF NOT EXISTS honco_support_requests (
+				id           VARCHAR(26)   PRIMARY KEY,
+				team_id      VARCHAR(26)   NOT NULL,
+				channel_id   VARCHAR(26)   NOT NULL DEFAULT '',
+				post_id      VARCHAR(26)   NOT NULL DEFAULT '',
+				requester_id VARCHAR(26)   NOT NULL,
+				agent_id     VARCHAR(26)   NOT NULL DEFAULT '',
+				issue        VARCHAR(1024) NOT NULL DEFAULT '',
+				status       VARCHAR(32)   NOT NULL,
+				reason       VARCHAR(512)  NOT NULL DEFAULT '',
+				created_at   BIGINT        NOT NULL,
+				accepted_at  BIGINT        NOT NULL DEFAULT 0,
+				started_at   BIGINT        NOT NULL DEFAULT 0,
+				ended_at     BIGINT        NOT NULL DEFAULT 0,
+				updated_at   BIGINT        NOT NULL
+			)`,
+			// The agent queue: open requests for a team, newest first.
+			`CREATE INDEX IF NOT EXISTS idx_honco_support_team_status
+				ON honco_support_requests (team_id, status, created_at)`,
+			// "my requests" and "my assigned work".
+			`CREATE INDEX IF NOT EXISTS idx_honco_support_requester
+				ON honco_support_requests (requester_id, created_at)`,
+			`CREATE INDEX IF NOT EXISTS idx_honco_support_agent
+				ON honco_support_requests (agent_id, created_at)`,
+
+			// Append-only audit. Separate from the request row because a
+			// request has one state but many transitions, and the history
+			// of who did what has to survive the request moving on.
+			`CREATE TABLE IF NOT EXISTS honco_support_events (
+				id         VARCHAR(26)  PRIMARY KEY,
+				request_id VARCHAR(26)  NOT NULL,
+				actor_id   VARCHAR(26)  NOT NULL DEFAULT '',
+				action     VARCHAR(32)  NOT NULL,
+				detail     VARCHAR(512) NOT NULL DEFAULT '',
+				created_at BIGINT       NOT NULL
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_honco_support_events_request
+				ON honco_support_events (request_id, created_at)`,
+		},
+	},
 }
 
 // Migrate brings the plugin's own schema up to date.
