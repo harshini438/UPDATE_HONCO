@@ -59,11 +59,46 @@ do_backup() {
         [ -s "$SIDECAR" ] && log "backup: state sidecar -> $SIDECAR" || rm -f "$SIDECAR"
     fi
 
+    # Everything else a restore would need and the dump does not contain:
+    #
+    #   run/data/            every attachment and every meeting recording --
+    #                        Mattermost's file store (FileSettings.Directory).
+    #                        A database restored without this has rows that
+    #                        point at files that are not there.
+    #   server/server/config/config.json
+    #                        Mattermost's config, which holds every setting
+    #                        including the plugin's (secrets among them --
+    #                        hence the 0600 on the archive below). It lives
+    #                        in the source checkout because that is where
+    #                        the server's default config search finds it;
+    #                        the checkout's .gitignore excludes it.
+    #   run/plugins/         the installed Honco plugin (server side)
+    #   run/client-plugins/  and its webapp bundle.
+    #   ~/.jitsi-meet-cfg    Jitsi/Jibri configuration and finalize.sh.
+    #   ~/.honco-*           the callback / service secret files.
+    #
+    # Mode 0600, because this archive is the one thing on disk that holds
+    # every secret at once. Skipped, not failed, when FILES=0.
+    if [ "${FILES:-1}" != "0" ]; then
+        FILESTAR="$BACKUP_DIR/honcochat-$STAMP.files.tar.gz"
+        (umask 077; tar -czf "$FILESTAR" \
+            --ignore-failed-read \
+            -C "$ROOT" run/data run/plugins run/client-plugins server/server/config/config.json \
+            -C "$HOME" .jitsi-meet-cfg .honco-jibri-secret .honco-meet-service-secret \
+            2>>"$LOG") || true
+        if [ -s "$FILESTAR" ]; then
+            chmod 600 "$FILESTAR"
+            log "backup: files archive -> $FILESTAR ($(du -h "$FILESTAR" | cut -f1), mode 600)"
+        else
+            rm -f "$FILESTAR"; log "backup: files archive skipped (nothing to archive)"
+        fi
+    fi
+
     # Prune: keep the newest $KEEP dumps, drop the rest (and their sidecars).
     mapfile -t OLD < <(ls -1t "$BACKUP_DIR"/honcochat-*.dump 2>/dev/null | tail -n +$((KEEP + 1)))
     for f in "${OLD[@]:-}"; do
         [ -n "$f" ] || continue
-        rm -f "$f" "${f%.dump}.state.tar"
+        rm -f "$f" "${f%.dump}.state.tar" "${f%.dump}.files.tar.gz"
         log "backup: pruned $(basename "$f")"
     done
 }

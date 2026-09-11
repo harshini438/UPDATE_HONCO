@@ -48,18 +48,36 @@ mkdir -p "$CFG/storage/jibri" "$CFG/jibri"
 sudo -n chown -R 1000:1000 "$CFG/storage/jibri" "$CFG/jibri"
 echo "   $CFG/storage/jibri"
 
-echo "== 3. finalize hook (placeholder until the whisper pipeline lands) =="
-cat > "$CFG/jibri/finalize.sh" <<'SH'
-#!/bin/bash
-# Jibri calls this with the finished recording's directory as $1.
-# The whisper pipeline replaces the body of this script.
-RECORDING_DIR="$1"
-echo "$(date -Is) finalize: $RECORDING_DIR" >> /storage/finalize.log
-exit 0
-SH
-chmod +x "$CFG/jibri/finalize.sh"
-sudo -n chown 1000:1000 "$CFG/jibri/finalize.sh"
-echo "   $CFG/jibri/finalize.sh"
+echo "== 3. finalize hook =="
+# The hook is version-controlled (jibri-finalize.sh, beside this script)
+# and carries no secret. The callback secret goes in its own 0600 file,
+# read at run time, so the hook can be committed, reviewed and backed up
+# while the secret is none of those things.
+#
+# The secret comes from ~/.honco-jibri-secret (JIBRI_SECRET=...), the same
+# file the plugin's JibriCallbackSecret setting is filled from. If it does
+# not exist yet, one is generated here; set the plugin setting to match.
+HERE="$(cd "$(dirname "$0")" && pwd)"
+sed 's/\r$//' "$HERE/jibri-finalize.sh" > "$CFG/jibri/finalize.sh"
+chmod 755 "$CFG/jibri/finalize.sh"
+if [ ! -s "$HOME/.honco-jibri-secret" ]; then
+    (umask 077; printf 'JIBRI_SECRET=%s\n' "$(openssl rand -hex 32)" > "$HOME/.honco-jibri-secret")
+    echo "   generated a new callback secret in ~/.honco-jibri-secret -- set the plugin's"
+    echo "   'Jibri callback secret' to the same value (mmctl --local config set ...)."
+fi
+# shellcheck disable=SC1090
+. "$HOME/.honco-jibri-secret"
+(umask 077; printf '%s\n' "$JIBRI_SECRET" > "$CFG/jibri/honco-callback.secret")
+sudo -n chown 1000:1000 "$CFG/jibri/finalize.sh" "$CFG/jibri/honco-callback.secret" 2>/dev/null || true
+chmod 600 "$CFG/jibri/honco-callback.secret"
+# Where the hook delivers to. Not a fixed address: honcochat.sh rewrites
+# this on every start from the distro's own eth0, the one address a Docker
+# Desktop container can reach a WSL distro on. Owned by the operator so
+# that rewrite needs no root.
+touch "$CFG/jibri/honco-chat.host"; chmod 644 "$CFG/jibri/honco-chat.host"
+echo "   $CFG/jibri/finalize.sh (from jibri-finalize.sh)"
+echo "   $CFG/jibri/honco-callback.secret (0600)"
+echo "   $CFG/jibri/honco-chat.host (filled in by honcochat.sh start)"
 
 echo "== 4. bring the stack up with jibri =="
 ./meet.sh up 2>&1 | tail -6

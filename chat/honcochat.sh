@@ -149,6 +149,35 @@ start_pg() {
     echo "postgres:  started on 5433"
 }
 
+# Tell Jibri where this server is, from inside its container.
+#
+# Jibri's finalize hook (meet/jibri-finalize.sh) delivers each recording
+# to this server over HTTP. From a Docker Desktop container the only
+# address that reaches a WSL distro is that distro's own eth0 -- not
+# host.docker.internal (absent from the container's /etc/hosts on this
+# compose network) and not the Windows LAN address (:8065 is forwarded on
+# IPv6 only). That eth0 address changes when WSL restarts, which is why it
+# is written here on every start rather than into the hook. The hook
+# reads it from /config/honco-chat.host; HONCO_CALLBACK_HOST overrides.
+write_callback_host() {
+    local cfg="${JITSI_CFG:-$HOME/.jitsi-meet-cfg}/jibri" host
+    [ -d "$cfg" ] || return 0
+    host="${HONCO_CALLBACK_HOST:-}"
+    if [ -z "$host" ]; then
+        host=$(ip -4 addr show eth0 2>/dev/null | grep -oE 'inet [0-9.]+' | cut -d' ' -f2 | head -1)
+        [ -n "$host" ] && host="$host:${PORT}"
+    fi
+    if [ -z "$host" ]; then
+        echo "honcochat: could not determine an address Jibri can reach; recordings will not be delivered" >&2
+        return 0
+    fi
+    if printf '%s\n' "$host" > "$cfg/honco-chat.host" 2>/dev/null; then
+        echo "honcochat: Jibri callback host -> $host"
+    else
+        echo "honcochat: could not write $cfg/honco-chat.host (owned by the jibri uid?); run: sudo sh -c 'echo $host > $cfg/honco-chat.host'" >&2
+    fi
+}
+
 start_app() {
     if running; then echo "honcochat: already running (pid $(cat "$PIDFILE"))"; return; fi
     export_env
@@ -159,6 +188,7 @@ start_app() {
     for _ in $(seq 1 40); do
         if curl -sf --max-time 3 "http://127.0.0.1:${PORT}/api/v4/system/ping" >/dev/null 2>&1; then
             echo "honcochat: up  pid=$(cat "$PIDFILE")  SiteURL=$(site_url)"
+            write_callback_host
             return 0
         fi
         sleep 2

@@ -40,12 +40,29 @@ else
     ip_addr=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}')
 fi
 
+# The last address this script derived, kept so a transient failure to ask
+# the host does not turn every meeting link into localhost. Seen for real:
+# Docker Desktop's binfmt registrations displaced WSL's own, powershell.exe
+# stopped executing from inside WSL, and the next start fell back to
+# localhost until someone noticed. A remembered address can be stale, so
+# it is only ever used as a fallback and says so; whenever derivation
+# works the cache is refreshed. HONCO_LAN_IP still overrides everything.
+CACHE="${HONCO_LAN_CACHE:-${ROOT:-$HOME/honco-chat}/run/lan-address.last}"
+
 case "${ip_addr:-}" in
     "" | 127.* | 169.254.*)
+        if [ -s "$CACHE" ] && cached=$(head -1 "$CACHE") && [ -n "$cached" ]; then
+            echo "lan-address: could not determine a LAN address (got '${ip_addr:-}');" >&2
+            echo "lan-address: using the last known address $cached from $CACHE." >&2
+            echo "lan-address: if this host has moved network, set HONCO_LAN_IP." >&2
+            printf '%s\n' "$cached"
+            exit 0
+        fi
         echo "lan-address: could not determine a LAN address (got '${ip_addr:-}')." >&2
         echo "lan-address: set HONCO_LAN_IP to the address peers should use." >&2
         exit 1
         ;;
 esac
 
+mkdir -p "$(dirname "$CACHE")" 2>/dev/null && printf '%s\n' "$ip_addr" > "$CACHE" 2>/dev/null || true
 printf '%s\n' "$ip_addr"
