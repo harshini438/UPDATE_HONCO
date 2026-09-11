@@ -284,9 +284,9 @@ func (p *Plugin) notifyAIFinal(m *Meeting, s *AISession) {
 	}
 	msg := "AI summary ready for **" + title + "**."
 	if link := p.permalink(m.ChannelID, m.PostID); link != "" {
-		msg += " [Open the meeting](" + link + ") and choose _AI Assistant_."
+		msg += " [Open the meeting](" + link + ") and press **AI Assistant** on its card."
 	} else {
-		msg += " Open the channel and choose _AI Assistant_ to read it."
+		msg += " Open the channel and press **AI Assistant** on the meeting's card to read it."
 	}
 	key := KindAISummaryReady + ":" + m.ID + ":" + strconv.FormatInt(s.Final.ReceivedAt, 10)
 	p.dmOnce(KindAISummaryReady, m.ID, m.CreatorID, key, msg)

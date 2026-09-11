@@ -227,10 +227,62 @@ type aiPush struct {
 
 var errAIBadEvent = errors.New("invalid ai event")
 
+// aiEventAliases lets a service keep its own vocabulary. Honco has one set
+// of semantics; these are the other names the same event is likely to have
+// on the producing side. Anything not listed here and not a known type is
+// still rejected, so a typo is still caught rather than silently dropped.
+var aiEventAliases = map[string]string{
+	"session_started":   AIEventStatus,
+	"session_ended":     AIEventStatus,
+	"session_status":    AIEventStatus,
+	"partial":           AIEventTranscript,
+	"transcript_line":   AIEventTranscript,
+	"utterance":         AIEventTranscript,
+	"topic":             AIEventTopics,
+	"summary":           AIEventFinal,
+	"summary_ready":     AIEventFinal,
+	"final_summary":     AIEventFinal,
+	"processing_failed": AIEventError,
+	"failed":            AIEventError,
+}
+
+// normaliseEvent rewrites an aliased type onto Honco's own, filling in what
+// the alias implies (session_started means status=live, session_ended means
+// status=ended) so the rest of the pipeline sees one vocabulary.
+func normaliseEvent(ev *aiEvent) {
+	canon, ok := aiEventAliases[ev.Type]
+	if !ok {
+		return
+	}
+	switch ev.Type {
+	case "session_started":
+		if ev.Status == "" {
+			ev.Status = AIStatusLive
+		}
+	case "session_ended":
+		if ev.Status == "" {
+			ev.Status = AIStatusEnded
+		}
+	case "summary_ready", "summary", "final_summary":
+		// nothing extra: the payload fields are the same
+	case "processing_failed", "failed":
+		if ev.Kind == "" {
+			ev.Kind = "processing_failed"
+		}
+	case "partial":
+		if ev.Final == nil {
+			no := false
+			ev.Final = &no
+		}
+	}
+	ev.Type = canon
+}
+
 // validateEvent checks one event and bounds every string. Returns a
 // message safe to send back to the service (it names the field, never
 // echoes content).
 func validateEvent(ev *aiEvent) error {
+	normaliseEvent(ev)
 	switch ev.Type {
 	case AIEventStatus:
 		if ev.Status == "" && ev.CaptureStatus == "" {

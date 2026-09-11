@@ -92,6 +92,23 @@ the service cannot create one.
 | `final` | `summary`, `key_points[]`, `decisions[]`, `action_items[]`, `key_insights[]`, `client_insights[]`, `topics[]`, `transcript_ref` | Post-call outputs. Fields merge, so they can arrive in several pushes. Sets the session to `completed` and sends the "AI summary ready" notification. |
 | `error` | `kind` (a short class, e.g. `asr_crashed`), `message` (operator detail) | Processing failed. **`message` is logged server-side only** — it never reaches a browser or an API response. |
 
+### Event names the service may already use
+
+A service with its own vocabulary does not have to change it. These names
+are accepted and mapped onto the semantics above; anything else is still a
+`400`, so a typo is caught rather than silently dropped.
+
+| The service sends | Honco treats it as |
+|---|---|
+| `session_started` | `status` with `status: live` |
+| `session_ended` | `status` with `status: ended` |
+| `session_status` | `status` |
+| `utterance`, `transcript_line` | `transcript` |
+| `partial` | `transcript` with `final: false` |
+| `topic` | `topics` |
+| `summary`, `summary_ready`, `final_summary` | `final` |
+| `processing_failed`, `failed` | `error` |
+
 Every event may carry `id` (string) and `at` (epoch ms). **`id` makes
 delivery idempotent**: an event id seen in the last 200 for that meeting is
 counted as `replayed` and changes nothing, so a service that retries after
@@ -156,6 +173,35 @@ membership and 404 otherwise.
 **channel** — so Mattermost's own delivery rules decide who receives it.
 The panel applies the delta in place and re-reads the session after a
 reconnect. **There is no polling anywhere.**
+
+## 3b. How a person reaches the assistant
+
+Three entry points, none of which require knowing anything about plugins,
+routes or URLs:
+
+1. **The meeting card**, in the channel where the call is happening:
+   `Join Meeting` · `AI Assistant` · `Meeting Summary`. Pressing
+   **AI Assistant** opens the Honco panel on the assistant, already showing
+   **that** meeting — the id comes from the card's own props, never a guess.
+2. **The App Bar**, which now has a second Honco entry ("Honco AI
+   Assistant", a spark) that opens the panel directly on the assistant.
+3. **The Honco Workspace panel** itself: Tasks · Meetings · **AI Assistant**
+   · Support · Search · Admin.
+
+The bot's "AI summary ready" DM links to the meeting card, where the same
+button is one press away.
+
+### Controls
+
+`Start AI session` (only when a service URL is configured and the meeting is
+running), `Stop AI session` (only while connecting/live) and `Reconnect`
+(always — it re-reads the session from the server and retries the service if
+it had dropped out). Start on a live session and Stop on an ended one are
+no-ops server-side, so repeated presses cannot create a second session.
+
+If this browser's WebSocket goes down the header says **Reconnecting…** and
+the panel re-reads the session when it comes back; it never silently shows
+stale state as live.
 
 ## 4. Meeting association
 

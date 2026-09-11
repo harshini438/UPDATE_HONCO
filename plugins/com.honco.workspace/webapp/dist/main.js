@@ -209,6 +209,8 @@
         '.hw-pre{margin-top:6px;padding:8px;font-size:12px;line-height:1.45;white-space:pre-wrap;border-radius:4px;background:rgba(var(--center-channel-color-rgb),.04);color:var(--center-channel-color);border:0}',
         '.hw-hint{margin-top:10px;padding:8px 10px;border-radius:4px;font-size:12px;line-height:1.5;background:rgba(var(--center-channel-color-rgb),.06);color:rgba(var(--center-channel-color-rgb),.8)}',
         '.hw-ai-pill{display:inline-flex;align-items:center;gap:6px;margin-left:auto;font-size:12px;color:rgba(var(--center-channel-color-rgb),.72)}',
+        '.hw-ai-controls{display:flex;flex:none;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid rgba(var(--center-channel-color-rgb),.08);background:rgba(var(--center-channel-color-rgb),.02)}',
+        '.hw-ai-controls .hw-btn{flex:none}',
         '.hw-ai-pulse{box-shadow:0 0 0 0 rgba(var(--online-indicator-rgb),.5);animation:hw-pulse 1.8s ease-out infinite}',
         '@keyframes hw-pulse{0%{box-shadow:0 0 0 0 rgba(var(--online-indicator-rgb),.45)}70%{box-shadow:0 0 0 6px rgba(var(--online-indicator-rgb),0)}100%{box-shadow:0 0 0 0 rgba(var(--online-indicator-rgb),0)}}',
         '.hw-ai-meeting{padding:12px 12px 10px;border-bottom:1px solid rgba(var(--center-channel-color-rgb),.08)}',
@@ -1252,6 +1254,42 @@
 
     var AI_WS_EVENT = 'custom_' + PLUGIN_ID + '_ai_event';
 
+    var AIIntent = {
+        meetingId: null,
+        wanted: false,
+        listeners: [],
+        subscribe: function (fn) {
+            this.listeners.push(fn);
+            var self = this;
+            return function () {
+                var i = self.listeners.indexOf(fn);
+                if (i >= 0) {
+                    self.listeners.splice(i, 1);
+                }
+            };
+        },
+        // Called from a meeting card. Opens the Honco panel, switches it to
+        // AI Assistant and selects THIS meeting -- never a guess, never a
+        // hardcoded id.
+        open: function (meetingId) {
+            this.meetingId = meetingId || null;
+            this.wanted = true;
+            if (window.HoncoOpenWorkspace) {
+                window.HoncoOpenWorkspace();
+            }
+            // A panel that is already open handles it now; one that is
+            // still mounting reads `wanted`/`meetingId` when it arrives.
+            this.listeners.forEach(function (fn) {
+                try {
+                    fn(meetingId || null);
+                } catch (err) { /* one bad listener must not stop the rest */ }
+            });
+        },
+    };
+    window.HoncoOpenAIAssistant = function (meetingId) {
+        AIIntent.open(meetingId);
+    };
+
     var AI_STATUS = {
         not_configured: {label: 'Not configured', tone: ''},
         idle: {label: 'Ready', tone: ''},
@@ -1260,6 +1298,7 @@
         ended: {label: 'Meeting ended', tone: ''},
         completed: {label: 'Completed', tone: 'ok'},
         unavailable: {label: 'Unavailable', tone: 'err'},
+        reconnecting: {label: 'Reconnecting…', tone: 'warn'},
         failed: {label: 'Processing failed', tone: 'err'},
     };
 
@@ -1404,11 +1443,15 @@
         var st = s0[0];
         var setSt = s0[1];
 
-        var ui0 = React.useState({showTranscript: false, showAll: false, olderLoading: false, starting: false, followLive: true});
+        var ui0 = React.useState({showTranscript: false, showAll: false, olderLoading: false, starting: false, stopping: false, followLive: true});
         var ui = ui0[0];
         var setUi = ui0[1];
 
         var listRef = React.useRef(null);
+
+        var w0 = React.useState(true);
+        var wsUp = w0[0];
+        var setWsUp = w0[1];
 
         // Feature wiring, once.
         React.useEffect(function () {
@@ -1448,6 +1491,46 @@
             loadMeetings(channelId);
         }, [channelId, loadMeetings]);
 
+        // A card asked for a specific meeting: select it, whether the panel
+        // was already open or is opening now.
+        React.useEffect(function () {
+            var stop = AIIntent.subscribe(function (meetingId) {
+                if (meetingId) {
+                    setSelected(meetingId);
+                }
+            });
+            if (AIIntent.meetingId) {
+                setSelected(AIIntent.meetingId);
+                AIIntent.meetingId = null;
+            }
+            return stop;
+        }, []);
+
+        // Whether this browser's WebSocket is up. Read from the webapp's own
+        // store rather than by asking the network: a panel that says
+        // "connected" while the socket is down would be lying, and polling
+        // the server to find out would be worse.
+        React.useEffect(function () {
+            if (!window.store || !window.store.subscribe) {
+                return undefined;
+            }
+            var read = function () {
+                try {
+                    var ws = window.store.getState().websocket;
+                    return !ws || ws.connected !== false;
+                } catch (err) {
+                    return true;
+                }
+            };
+            setWsUp(read());
+            return window.store.subscribe(function () {
+                var up = read();
+                setWsUp(function (prev) {
+                    return prev === up ? prev : up;
+                });
+            });
+        }, []);
+
         // The session for the selected meeting: read once on select and
         // again after a reconnect; everything in between is the WebSocket.
         var loadSession = React.useCallback(function (meetingId) {
@@ -1466,7 +1549,7 @@
                 var s = res.data.session || {};
                 var lines = s.transcript || [];
                 setSt({
-                    loading: false, error: null,
+                    loading: false, error: null, notice: null,
                     meeting: res.data.meeting, participants: res.data.participants || [],
                     session: s, lines: lines,
                     olderOnService: Boolean(s.transcript_gap),
@@ -1622,25 +1705,58 @@
             });
         }
 
-        function startSession() {
-            if (!selected || ui.starting) {
+        // Start and Stop are idempotent by construction: the server treats a
+        // start on a live session as a no-op and an end on an ended one as
+        // already done, so a double click cannot make two sessions.
+        function sessionCall(method, busyKey) {
+            if (!selected || ui[busyKey]) {
                 return;
             }
-            setUi(Object.assign({}, ui, {starting: true}));
-            requestStatus('POST', '/meetings/' + encodeURIComponent(selected) + '/ai/session', {}).then(function (res) {
-                setUi(function (u) {
-                    return Object.assign({}, u, {starting: false});
-                });
-                if (res.data && res.data.session) {
-                    setSt(function (p) {
-                        return Object.assign({}, p, {session: res.data.session});
+            var next = {};
+            next[busyKey] = true;
+            setUi(Object.assign({}, ui, next));
+            requestStatus(method, '/meetings/' + encodeURIComponent(selected) + '/ai/session', method === 'POST' ? {} : null)
+                .then(function (res) {
+                    var done = {};
+                    done[busyKey] = false;
+                    setUi(function (u) {
+                        return Object.assign({}, u, done);
                     });
-                }
-            }).catch(function () {
-                setUi(function (u) {
-                    return Object.assign({}, u, {starting: false});
+                    if (res.data && res.data.session) {
+                        setSt(function (p) {
+                            return Object.assign({}, p, {session: res.data.session});
+                        });
+                    }
+                    setSt(function (p) {
+                        return Object.assign({}, p, {notice: (res.data && res.data.error) || null});
+                    });
+                }).catch(function () {
+                    var done = {};
+                    done[busyKey] = false;
+                    setUi(function (u) {
+                        return Object.assign({}, u, done);
+                    });
                 });
-            });
+        }
+
+        function startSession() {
+            sessionCall('POST', 'starting');
+        }
+
+        function stopSession() {
+            sessionCall('DELETE', 'stopping');
+        }
+
+        // Reconnect is "forget what this browser thinks and ask the server
+        // again", plus a start if the service had dropped out. It never
+        // invents state.
+        function reconnect() {
+            loadMeetings(channelId);
+            loadSession(selected);
+            if (cfg.service_configured && st.session &&
+                (st.session.status === 'unavailable' || st.session.status === 'failed')) {
+                startSession();
+            }
         }
 
         // ---- render -------------------------------------------------------
@@ -1658,7 +1774,30 @@
         var hasOlder = st.lines.length > 0 && st.lines[0].seq > 0;
 
         var header = e(Toolbar, {key: 'bar', icon: 'creation-outline', title: 'Honco AI Assistant'},
-            e(StatusPill, {key: 'st', status: status}));
+            e(StatusPill, {key: 'st', status: wsUp ? status : 'reconnecting'}));
+
+        // The controls a person actually has: start the assistant on this
+        // meeting, stop it, or ask the server again. Shown only when there
+        // is a meeting to act on, and each one is enabled only when it would
+        // do something.
+        var controls = null;
+        if (session && meeting) {
+            var canStart = cfg.service_configured && !finished &&
+                status !== 'live' && status !== 'connecting';
+            var canStop = status === 'live' || status === 'connecting';
+            controls = e('div', {key: 'controls', className: 'hw-ai-controls'}, [
+                canStart ? e(Button, {
+                    key: 'start', small: true, icon: 'play', disabled: ui.starting, onClick: startSession,
+                }, ui.starting ? 'Starting…' : 'Start AI session') : null,
+                canStop ? e(Button, {
+                    key: 'stop', kind: 'ghost', small: true, icon: 'close', disabled: ui.stopping, onClick: stopSession,
+                }, ui.stopping ? 'Stopping…' : 'Stop AI session') : null,
+                e(Button, {
+                    key: 'rc', kind: 'ghost', small: true, icon: 'refresh',
+                    className: (canStart || canStop) ? 'hw-spacer' : '', onClick: reconnect,
+                }, 'Reconnect'),
+            ]);
+        }
 
         var body;
         if (!channelId) {
@@ -1763,7 +1902,16 @@
             body = e('div', {className: 'hw-list'}, parts);
         }
 
-        return e('div', {className: 'hw hw-ai', 'data-ai-panel': selected || ''}, [header, body]);
+        return e('div', {className: 'hw hw-ai', 'data-ai-panel': selected || ''}, [
+            header,
+            wsUp ? null : e('div', {key: 'ws', className: 'hw-error', role: 'status'}, [
+                e(Icon, {key: 'i', name: 'refresh'}),
+                e('span', {key: 't'}, 'Connection lost. Reconnecting…'),
+            ]),
+            st.notice ? e('div', {key: 'notice', className: 'hw-note', style: {paddingBottom: 0}}, st.notice) : null,
+            controls,
+            body,
+        ]);
     }
 
     // Live view: suggestions first (that is what a person on a call needs
@@ -2879,6 +3027,12 @@
         } catch (err) {
             initialTab = 'tasks';
         }
+        // Someone pressed "AI Assistant" on a card or in the App Bar while
+        // this panel was closed: that is a direct request, and it wins over
+        // whatever tab the channel was last left on.
+        if (AIIntent.wanted) {
+            initialTab = 'ai';
+        }
 
         // Whether to OFFER the Admin tab. Read from the webapp's own store
         // purely so a non-admin is not shown a tab that would 403 on every
@@ -2913,6 +3067,21 @@
             return SearchIntent.subscribe(function () {
                 setTab('search');
             });
+        }, []);
+
+        // "AI Assistant" on a meeting card, or the AI icon in the App Bar.
+        // Both may fire before this panel exists, so the flag is read on
+        // mount too; AIPanel clears the meeting id once it has selected it.
+        React.useEffect(function () {
+            var stop = AIIntent.subscribe(function () {
+                AIIntent.wanted = false;
+                setTab('ai');
+            });
+            if (AIIntent.wanted) {
+                AIIntent.wanted = false;
+                setTab('ai');
+            }
+            return stop;
         }, []);
 
         ensureStyles();
@@ -3126,6 +3295,22 @@
             // rather than offering a link the server would refuse.
             actions.push(e(Badge, {key: 'recgone'}, 'Recording unavailable'));
         }
+        // The assistant belongs to THIS meeting, and this is where a person
+        // is when they think about it -- so the card is the entry point, not
+        // an icon somewhere else. The id comes from the card's own props.
+        if (card.meeting_id) {
+            actions.push(e(Button, {
+                key: 'ai',
+                kind: 'secondary',
+                small: true,
+                icon: 'creation-outline',
+                onClick: function () {
+                    if (window.HoncoOpenAIAssistant) {
+                        window.HoncoOpenAIAssistant(card.meeting_id);
+                    }
+                },
+            }, 'AI Assistant'));
+        }
         if (card.has_summary) {
             actions.push(e(Button, {
                 key: 'sum',
@@ -3210,11 +3395,21 @@
     // The App Bar takes an icon URL rather than a component, so the icon
     // is an inline SVG data URI -- no asset to serve and nothing to add to
     // the webapp's own build.
+    //
+    // AI_ICON_URL is the assistant's own entry: a spark, which is what the
+    // rest of the product uses for generated content (icon-creation-outline
+    // on the tab and the panel header).
     var ICON_URL = 'data:image/svg+xml;base64,' + btoa(
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" ' +
         'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
         '<path d="M9 11l3 3L22 4"/>' +
         '<path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>');
+
+    var AI_ICON_URL = 'data:image/svg+xml;base64,' + btoa(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" ' +
+        'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+        '<path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/>' +
+        '<path d="M18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z"/></svg>');
 
     // --- Registration ------------------------------------------------------
 
@@ -3245,6 +3440,9 @@
         window.HoncoSupportBus = window.HoncoSupportBus || [];
         window.HoncoAIBus = window.HoncoAIBus || [];
         window.HoncoReconnectBus = window.HoncoReconnectBus || [];
+        // Set once the RHS is registered: how anything in the centre channel
+        // opens the Honco panel without knowing how the RHS works.
+        window.HoncoOpenWorkspace = window.HoncoOpenWorkspace || function () {};
         if (typeof registry.registerWebSocketEventHandler === 'function') {
             registry.registerWebSocketEventHandler(MEETING_WS_EVENT, function (msg) {
                 window.HoncoMeetingBus.forEach(function (fn) {
@@ -3306,6 +3504,32 @@
         }
         if (!rhs) {
             rhs = registry.registerRightHandSidebarComponent(HoncoPanel, 'Honco Workspace');
+        }
+
+        // One function every entry point uses to open the panel: the cards,
+        // the AI app-bar icon and the channel-header button all go through
+        // this, so there is exactly one way the panel opens.
+        var openWorkspace = function () {
+            try {
+                store.dispatch(rhs.showRHSPlugin || rhs.toggleRHSPlugin);
+            } catch (err) {
+                try {
+                    store.dispatch(rhs.toggleRHSPlugin);
+                } catch (err2) { /* nothing else to try */ }
+            }
+        };
+        window.HoncoOpenWorkspace = openWorkspace;
+
+        // A second App Bar entry that goes straight to the assistant. The
+        // Honco Workspace icon opens the panel where it was; this one names
+        // the feature, so "AI Assistant" is reachable without knowing that
+        // Honco Workspace contains it.
+        if (typeof registry.registerAppBarComponent === 'function') {
+            try {
+                registry.registerAppBarComponent(AI_ICON_URL, function () {
+                    AIIntent.open(null);
+                }, 'Honco AI Assistant', null);
+            } catch (err) { /* the tab inside the panel still works */ }
         }
 
         // Channel-header button on the SAME panel instance. Mattermost

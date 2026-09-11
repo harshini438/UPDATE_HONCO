@@ -298,3 +298,69 @@ func TestBroadcastPayloadIsGobSafe(t *testing.T) {
 		}
 	}
 }
+
+// A service with its own vocabulary should not have to change it. The
+// aliases map onto Honco's semantics; anything unknown is still refused.
+func TestEventAliases(t *testing.T) {
+	cases := []struct {
+		in     aiEvent
+		want   string
+		status string
+	}{
+		{aiEvent{Type: "session_started"}, AIEventStatus, AIStatusLive},
+		{aiEvent{Type: "session_ended"}, AIEventStatus, AIStatusEnded},
+		{aiEvent{Type: "session_status", Status: AIStatusLive}, AIEventStatus, AIStatusLive},
+		{aiEvent{Type: "utterance", Text: "hello"}, AIEventTranscript, ""},
+		{aiEvent{Type: "transcript_line", Text: "hello"}, AIEventTranscript, ""},
+		{aiEvent{Type: "topic", Topics: []string{"Pricing"}}, AIEventTopics, ""},
+		{aiEvent{Type: "summary_ready", Summary: "s"}, AIEventFinal, ""},
+		{aiEvent{Type: "final_summary", Summary: "s"}, AIEventFinal, ""},
+		{aiEvent{Type: "processing_failed"}, AIEventError, ""},
+	}
+	for i, c := range cases {
+		ev := c.in
+		if err := validateEvent(&ev); err != nil {
+			t.Fatalf("case %d (%s): %v", i, c.in.Type, err)
+		}
+		if ev.Type != c.want {
+			t.Fatalf("case %d: %q became %q, want %q", i, c.in.Type, ev.Type, c.want)
+		}
+		if c.status != "" && ev.Status != c.status {
+			t.Fatalf("case %d: %q implies status %q, got %q", i, c.in.Type, c.status, ev.Status)
+		}
+	}
+
+	// "partial" is an interim line, so it must not be marked final.
+	part := aiEvent{Type: "partial", Text: "half a sen"}
+	if err := validateEvent(&part); err != nil {
+		t.Fatal(err)
+	}
+	if part.Lines[0].Final {
+		t.Fatal("a partial line is not final")
+	}
+	// processing_failed gets a class even when the service sent none.
+	fail := aiEvent{Type: "processing_failed"}
+	_ = validateEvent(&fail)
+	if fail.Kind != "processing_failed" {
+		t.Fatalf("kind %q", fail.Kind)
+	}
+	// An unknown name is still an error, not a silent drop.
+	unknown := aiEvent{Type: "brainwave", Text: "x"}
+	if err := validateEvent(&unknown); err == nil {
+		t.Fatal("unknown type accepted")
+	}
+	// An aliased event still folds into the session correctly.
+	sess := &AISession{Status: AIStatusIdle}
+	started := aiEvent{Type: "session_started"}
+	_ = validateEvent(&started)
+	sess.apply(&started, 1)
+	line := aiEvent{Type: "utterance", Text: "hello", Speaker: "Client"}
+	_ = validateEvent(&line)
+	sess.apply(&line, 2)
+	done := aiEvent{Type: "summary_ready", Summary: "S"}
+	_ = validateEvent(&done)
+	sess.apply(&done, 3)
+	if sess.Status != AIStatusCompleted || sess.Final == nil || sess.Final.Summary != "S" || len(sess.Transcript) != 1 {
+		t.Fatalf("aliased events did not fold correctly: %+v", sess)
+	}
+}
