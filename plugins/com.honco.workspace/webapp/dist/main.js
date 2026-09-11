@@ -5,12 +5,15 @@
  * Mattermost webapp already exposes on `window`. That is deliberate:
  * a webpack/babel pipeline would add a second frontend build to a project
  * that already has one, for a panel of this size. There is no new
- * framework, no new component library and no new design system here.
+ * framework and no new component library here.
  *
  * Everything renders inside Mattermost's own right-hand sidebar and uses
  * Mattermost's own CSS custom properties (--center-channel-color,
  * --button-bg, ...), so it inherits the current Honco theme automatically
- * and changes appearance with it.
+ * and changes appearance with it. The one stylesheet below (`CSS`) is a
+ * thin layer of `.hw-*` classes on those same variables -- buttons, rows,
+ * tabs, empty and loading states -- so every Honco panel and card shares
+ * one look, with hover and focus states that inline styles cannot give.
  */
 (function () {
     'use strict';
@@ -110,35 +113,201 @@
 
     // --- shared styles -----------------------------------------------------
 
-    var INPUT = {
-        width: '100%',
-        boxSizing: 'border-box',
-        padding: '6px 8px',
-        marginBottom: 6,
-        borderRadius: 4,
-        border: '1px solid rgba(var(--center-channel-color-rgb), 0.24)',
-        background: 'var(--center-channel-bg)',
-        color: 'var(--center-channel-color)',
-        fontSize: 13,
-    };
-    var BTN = {
-        background: 'var(--button-bg)',
-        color: 'var(--button-color)',
-        border: 'none',
-        borderRadius: 4,
-        padding: '6px 14px',
-        fontSize: 13,
-        fontWeight: 600,
-        cursor: 'pointer',
-    };
-    var LINKBTN = {
-        background: 'none',
-        border: 'none',
-        padding: 0,
-        fontSize: 12,
-        color: 'var(--link-color)',
-        cursor: 'pointer',
-    };
+    // One small stylesheet, injected once. Inline styles cannot express
+    // :hover, :focus-visible or an animation, and those are exactly what
+    // separates a panel that feels native from one that feels bolted on.
+    // Every colour is a Mattermost theme variable, so light and dark (and
+    // any custom theme) come for free; nothing here is a fixed hex.
+    var CSS = [
+        '.hw{display:flex;flex-direction:column;height:100%;min-height:0;font-size:13px;color:var(--center-channel-color);container-type:inline-size;container-name:hw}',
+        '.hw *{box-sizing:border-box}',
+        '.hw-tabs{display:flex;flex:none;overflow-x:auto;scrollbar-width:none;padding:0 6px;border-bottom:1px solid rgba(var(--center-channel-color-rgb),.12)}',
+        '.hw-tabs::-webkit-scrollbar{display:none}',
+        '.hw-tab{flex:1 0 auto;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;background:none;border:0;border-bottom:2px solid transparent;border-radius:0;padding:10px 7px 8px;font:inherit;font-size:12px;color:rgba(var(--center-channel-color-rgb),.75);cursor:pointer;transition:color .12s,background .12s}',
+        '.hw-tab .icon{display:none;font-size:16px;line-height:1}',
+        '@container hw (min-width: 560px){.hw-tab .icon{display:inline}.hw-tab{padding:10px 12px 8px;font-size:13px}}',
+        '.hw-tab:hover{color:var(--center-channel-color);background:rgba(var(--center-channel-color-rgb),.04)}',
+        '.hw-tab[aria-selected=true]{color:var(--button-bg);border-bottom-color:var(--button-bg);font-weight:600}',
+        '.hw-bar{display:flex;flex:none;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid rgba(var(--center-channel-color-rgb),.12)}',
+        '.hw-bar-title{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:13px}',
+        '.hw-bar-title .icon{font-size:16px;line-height:1;color:rgba(var(--center-channel-color-rgb),.64)}',
+        '.hw-spacer{margin-left:auto}',
+        '.hw-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:6px 14px;border-radius:4px;border:1px solid transparent;font:inherit;font-size:13px;font-weight:600;line-height:1.3;cursor:pointer;text-decoration:none;background:var(--button-bg);color:var(--button-color);transition:background .12s,box-shadow .12s,border-color .12s}',
+        '.hw-btn:hover{background:rgba(var(--button-bg-rgb),.88);color:var(--button-color);text-decoration:none}',
+        '.hw-btn:active{background:rgba(var(--button-bg-rgb),.8)}',
+        '.hw-btn:disabled{opacity:.55;cursor:default}',
+        '.hw-btn-sm{padding:4px 10px;font-size:12px}',
+        '.hw-btn-secondary{background:transparent;color:var(--button-bg);border-color:var(--button-bg)}',
+        '.hw-btn-secondary:hover{background:rgba(var(--button-bg-rgb),.08);color:var(--button-bg)}',
+        '.hw-btn-ghost{background:transparent;color:var(--center-channel-color);border-color:rgba(var(--center-channel-color-rgb),.24)}',
+        '.hw-btn-ghost:hover{background:rgba(var(--center-channel-color-rgb),.06);color:var(--center-channel-color)}',
+        '.hw-btn-link{background:none;border:0;padding:0;font-weight:400;font-size:12px;color:var(--link-color)}',
+        '.hw-btn-link:hover{background:none;color:var(--link-color);text-decoration:underline}',
+        '.hw-btn-danger.hw-btn-link{color:var(--error-text)}',
+        '.hw-btn-danger.hw-btn-link:hover{color:var(--error-text)}',
+        '.hw-input,.hw-select,.hw-textarea{width:100%;padding:6px 8px;margin-bottom:6px;border-radius:4px;border:1px solid rgba(var(--center-channel-color-rgb),.24);background:var(--center-channel-bg);color:var(--center-channel-color);font:inherit;font-size:13px;line-height:1.4;transition:border-color .12s,box-shadow .12s}',
+        '.hw-input::placeholder,.hw-textarea::placeholder{color:rgba(var(--center-channel-color-rgb),.56)}',
+        '.hw-input:hover,.hw-select:hover,.hw-textarea:hover{border-color:rgba(var(--center-channel-color-rgb),.4)}',
+        '.hw-input:focus,.hw-select:focus,.hw-textarea:focus{outline:0;border-color:var(--button-bg);box-shadow:0 0 0 2px rgba(var(--button-bg-rgb),.2)}',
+        '.hw-textarea{min-height:54px;resize:vertical}',
+        '.hw-select{appearance:none;-webkit-appearance:none;padding-right:26px;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Cpath fill=%27%238b8fa3%27 d=%27M7 10l5 5 5-5z%27/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 6px center;background-size:16px}',
+        '.hw-select-sm{width:auto;margin:0;padding:3px 24px 3px 8px;font-size:12px}',
+        '.hw-check{display:inline-flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;margin:0}',
+        '.hw-check input{margin:0;accent-color:var(--button-bg)}',
+        '.hw-form{flex:none;padding:10px 12px;border-bottom:1px solid rgba(var(--center-channel-color-rgb),.12);background:rgba(var(--center-channel-color-rgb),.03)}',
+        '.hw-form-label{font-size:12px;margin-bottom:4px;color:rgba(var(--center-channel-color-rgb),.72)}',
+        '.hw-form-note{font-size:11px;margin-bottom:8px;color:rgba(var(--center-channel-color-rgb),.64)}',
+        '.hw-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}',
+        '.hw-list{flex:1;min-height:0;overflow-y:auto}',
+        '.hw-row{padding:10px 12px;border-bottom:1px solid rgba(var(--center-channel-color-rgb),.08);transition:background .12s}',
+        '.hw-row:hover{background:rgba(var(--center-channel-color-rgb),.03)}',
+        '.hw-row-title{font-size:13px;font-weight:600;color:var(--center-channel-color);word-break:break-word}',
+        '.hw-row-done .hw-row-title{text-decoration:line-through;opacity:.7}',
+        '.hw-row-desc{font-size:12px;margin-top:2px;white-space:pre-wrap;word-break:break-word;color:rgba(var(--center-channel-color-rgb),.72)}',
+        '.hw-row-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin-top:6px;font-size:11px;color:rgba(var(--center-channel-color-rgb),.64)}',
+        '.hw-row-meta .icon{font-size:13px;line-height:1;vertical-align:-1px}',
+        '.hw-row-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}',
+        '.hw-hit{display:block;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid rgba(var(--center-channel-color-rgb),.08);padding:9px 16px;cursor:pointer;font:inherit;color:inherit;transition:background .12s}',
+        '.hw-hit:hover{background:rgba(var(--center-channel-color-rgb),.04)}',
+        '.hw-chips{display:flex;flex-wrap:wrap;gap:4px;padding:0 16px 10px}',
+        '.hw-chip{padding:3px 10px;font:inherit;font-size:12px;border-radius:12px;cursor:pointer;border:1px solid rgba(var(--center-channel-color-rgb),.16);background:transparent;color:rgba(var(--center-channel-color-rgb),.75);transition:background .12s,color .12s,border-color .12s}',
+        '.hw-chip:hover{background:rgba(var(--center-channel-color-rgb),.06);color:var(--center-channel-color)}',
+        '.hw-chip[aria-selected=true]{background:rgba(var(--button-bg-rgb),.08);border-color:rgba(var(--button-bg-rgb),.4);color:var(--button-bg);font-weight:600}',
+        '.hw-section-title{padding:10px 16px 4px;font-size:11px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;color:rgba(var(--center-channel-color-rgb),.56)}',
+        '.hw-badge{display:inline-flex;align-items:center;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600;line-height:16px;background:rgba(var(--center-channel-color-rgb),.08);color:rgba(var(--center-channel-color-rgb),.72)}',
+        '.hw-badge-ok{background:rgba(var(--online-indicator-rgb),.12);color:var(--online-indicator)}',
+        '.hw-badge-warn{background:rgba(var(--away-indicator-rgb),.16);color:rgba(var(--center-channel-color-rgb),.8)}',
+        '.hw-badge-err{background:rgba(var(--error-text-color-rgb),.1);color:var(--error-text)}',
+        '.hw-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0}',
+        '.hw-status{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--center-channel-color)}',
+        '.hw-empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:4px;padding:36px 24px 28px;color:rgba(var(--center-channel-color-rgb),.64);font-size:13px;line-height:1.5}',
+        '.hw-empty .icon{font-size:32px;line-height:1;margin-bottom:6px;color:rgba(var(--center-channel-color-rgb),.4)}',
+        '.hw-empty-title{font-size:14px;font-weight:600;color:var(--center-channel-color)}',
+        '.hw-empty .hw-btn{margin-top:10px}',
+        '.hw-error{display:flex;gap:8px;align-items:flex-start;margin:10px 12px;padding:8px 10px;border-radius:4px;font-size:12px;line-height:1.45;background:rgba(var(--error-text-color-rgb),.08);color:var(--error-text)}',
+        '.hw-error .icon{font-size:15px;line-height:1.2;flex-shrink:0}',
+        '.hw-note{padding:12px;font-size:13px;line-height:1.5;color:rgba(var(--center-channel-color-rgb),.72)}',
+        '.hw-skeleton{padding:12px}',
+        '.hw-skeleton i{display:block;height:11px;border-radius:4px;margin:9px 0;background:linear-gradient(90deg,rgba(var(--center-channel-color-rgb),.06) 25%,rgba(var(--center-channel-color-rgb),.12) 50%,rgba(var(--center-channel-color-rgb),.06) 75%);background-size:400px 100%;animation:hw-shimmer 1.4s linear infinite}',
+        '@keyframes hw-shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}',
+        '.hw-card{border:1px solid rgba(var(--center-channel-color-rgb),.16);border-radius:8px;padding:14px 16px;margin:4px 0;max-width:520px;background:rgba(var(--center-channel-color-rgb),.03);transition:border-color .12s,box-shadow .12s}',
+        '.hw-card:hover{border-color:rgba(var(--center-channel-color-rgb),.28);box-shadow:0 1px 3px rgba(0,0,0,.06)}',
+        '.hw-card a.hw-btn,.hw-card a.hw-btn:hover,.hw-card a.hw-btn:focus{color:var(--button-color);text-decoration:none}',
+        '.hw-card a.hw-btn-secondary,.hw-card a.hw-btn-secondary:hover,.hw-card a.hw-btn-secondary:focus{color:var(--button-bg)}',
+        '.hw-card-title{display:flex;align-items:center;gap:8px;margin-bottom:2px;font-size:15px;font-weight:700;color:var(--center-channel-color)}',
+        '.hw-card-title .icon{font-size:20px;line-height:1;color:var(--button-bg)}',
+        '.hw-card-sub{font-size:12px;margin-bottom:8px;color:rgba(var(--center-channel-color-rgb),.72)}',
+        '.hw-card-line{font-size:12px;margin-top:4px;display:flex;align-items:center;gap:6px;color:rgba(var(--center-channel-color-rgb),.72)}',
+        '.hw-card-line .icon{font-size:14px;line-height:1}',
+        '.hw-kv{display:flex;justify-content:space-between;gap:12px;font-size:13px;padding:4px 0;border-bottom:1px solid rgba(var(--center-channel-color-rgb),.06)}',
+        '.hw-kv:last-child{border-bottom:0}',
+        '.hw-kv-k{color:rgba(var(--center-channel-color-rgb),.8)}',
+        '.hw-kv-v{font-weight:600;text-align:right;font-variant-numeric:tabular-nums}',
+        '.hw-kv-warn{color:var(--error-text)}',
+        '.hw-pager{display:flex;flex:none;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 12px;border-top:1px solid rgba(var(--center-channel-color-rgb),.12);font-size:11px;color:rgba(var(--center-channel-color-rgb),.56)}',
+        '.hw-pager-range{margin-left:auto;font-variant-numeric:tabular-nums}',
+        '.hw-pre{margin-top:6px;padding:8px;font-size:12px;line-height:1.45;white-space:pre-wrap;border-radius:4px;background:rgba(var(--center-channel-color-rgb),.04);color:var(--center-channel-color);border:0}',
+        '.hw-hint{margin-top:10px;padding:8px 10px;border-radius:4px;font-size:12px;line-height:1.5;background:rgba(var(--center-channel-color-rgb),.06);color:rgba(var(--center-channel-color-rgb),.8)}',
+        '.hw-fade{animation:hw-fade .16s ease-out}',
+        '@keyframes hw-fade{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:none}}',
+        '.hw :focus-visible{outline:2px solid var(--button-bg);outline-offset:1px}',
+        '.hw-tab:focus-visible{outline-offset:-2px}',
+        '@media (prefers-reduced-motion:reduce){.hw *,.hw-card,.hw-fade,.hw-skeleton i{animation:none!important;transition:none!important}}',
+    ].join('\n');
+
+    function ensureStyles() {
+        if (document.getElementById('honco-workspace-css')) {
+            return;
+        }
+        var el = document.createElement('style');
+        el.id = 'honco-workspace-css';
+        el.textContent = CSS;
+        document.head.appendChild(el);
+    }
+
+    // --- shared components -------------------------------------------------
+
+    function Icon(props) {
+        return e('i', {className: 'icon icon-' + props.name, 'aria-hidden': true, style: props.style});
+    }
+
+    // kind: primary (default) | secondary | ghost | link | danger-link
+    function Button(props) {
+        var cls = 'hw-btn';
+        if (props.kind === 'secondary') {
+            cls += ' hw-btn-secondary';
+        } else if (props.kind === 'ghost') {
+            cls += ' hw-btn-ghost';
+        } else if (props.kind === 'link') {
+            cls += ' hw-btn-link';
+        } else if (props.kind === 'danger-link') {
+            cls += ' hw-btn-link hw-btn-danger';
+        }
+        if (props.small) {
+            cls += ' hw-btn-sm';
+        }
+        if (props.className) {
+            cls += ' ' + props.className;
+        }
+        var attrs = {
+            className: cls,
+            type: props.type || 'button',
+            onClick: props.onClick,
+            disabled: props.disabled,
+            title: props.title,
+            'aria-label': props['aria-label'],
+            style: props.style,
+        };
+        return e('button', attrs, [
+            props.icon ? e(Icon, {key: 'i', name: props.icon}) : null,
+            props.children,
+        ]);
+    }
+
+    function Toolbar(props) {
+        return e('div', {className: 'hw-bar', role: props.role}, [
+            props.icon || props.title ? e('span', {key: 't', className: 'hw-bar-title'}, [
+                props.icon ? e(Icon, {key: 'i', name: props.icon}) : null,
+                props.title ? e('span', {key: 'l'}, props.title) : null,
+            ]) : null,
+            props.children,
+        ]);
+    }
+
+    function EmptyState(props) {
+        return e('div', {className: 'hw-empty hw-fade', role: 'status'}, [
+            props.icon ? e(Icon, {key: 'i', name: props.icon}) : null,
+            props.title ? e('div', {key: 't', className: 'hw-empty-title'}, props.title) : null,
+            props.children ? e('div', {key: 'b'}, props.children) : null,
+            props.action ? props.action : null,
+        ]);
+    }
+
+    // Three grey lines while a list loads. The list keeps its height, so
+    // the panel does not jump when the data arrives.
+    function Loading(props) {
+        return e('div', {className: 'hw-skeleton', role: 'status', 'aria-live': 'polite', 'aria-label': props.label || 'Loading'}, [
+            e('i', {key: 1, style: {width: '70%'}}),
+            e('i', {key: 2, style: {width: '90%'}}),
+            e('i', {key: 3, style: {width: '55%'}}),
+        ]);
+    }
+
+    function ErrorNote(props) {
+        return e('div', {className: 'hw-error', role: 'alert'}, [
+            e(Icon, {key: 'i', name: 'alert-circle-outline'}),
+            e('span', {key: 't'}, props.children),
+        ]);
+    }
+
+    function Badge(props) {
+        var cls = 'hw-badge' + (props.tone ? ' hw-badge-' + props.tone : '');
+        return e('span', {className: cls}, props.children);
+    }
+
+    function Dot(props) {
+        return e('span', {className: 'hw-dot', style: {background: props.color}});
+    }
 
     // --- Task editor (create and edit share one form) ----------------------
 
@@ -197,15 +366,11 @@
 
         return e('form', {
             onSubmit: submit,
-            style: {
-                padding: '10px 12px',
-                borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.12)',
-                background: 'rgba(var(--center-channel-color-rgb), 0.03)',
-            },
+            className: 'hw-form hw-fade',
         }, [
             e('input', {
                 key: 'title',
-                style: INPUT,
+                className: 'hw-input',
                 placeholder: 'Task title',
                 'aria-label': 'Task title',
                 value: form.title,
@@ -216,7 +381,7 @@
             }),
             e('textarea', {
                 key: 'desc',
-                style: Object.assign({}, INPUT, {minHeight: 54, resize: 'vertical'}),
+                className: 'hw-textarea',
                 placeholder: 'Description (optional)',
                 'aria-label': 'Task description',
                 value: form.description,
@@ -226,7 +391,7 @@
             }),
             e('select', {
                 key: 'assignee',
-                style: INPUT,
+                className: 'hw-select',
                 'aria-label': 'Assignee',
                 value: form.assignee_id,
                 onChange: function (ev) {
@@ -239,7 +404,7 @@
             )),
             props.task ? e('select', {
                 key: 'status',
-                style: INPUT,
+                className: 'hw-select',
                 'aria-label': 'Status',
                 value: form.status,
                 onChange: function (ev) {
@@ -250,7 +415,7 @@
             })) : null,
             e('input', {
                 key: 'due',
-                style: INPUT,
+                className: 'hw-input',
                 type: 'date',
                 'aria-label': 'Due date',
                 value: form.due,
@@ -261,28 +426,17 @@
 
             state.error ? e('div', {
                 key: 'err',
+                role: 'alert',
                 style: {color: 'var(--error-text)', fontSize: 12, marginBottom: 6},
             }, state.error) : null,
 
-            e('div', {key: 'actions', style: {display: 'flex', gap: 8, flexWrap: 'wrap'}}, [
-                e('button', {
+            e('div', {key: 'actions', className: 'hw-actions'}, [
+                e(Button, {
                     key: 'save',
                     type: 'submit',
                     disabled: state.saving || !form.title.trim(),
-                    style: Object.assign({}, BTN, {
-                        opacity: (state.saving || !form.title.trim()) ? 0.6 : 1,
-                    }),
                 }, state.saving ? 'Saving…' : (props.task ? 'Save changes' : 'Create task')),
-                e('button', {
-                    key: 'cancel',
-                    type: 'button',
-                    onClick: props.onCancel,
-                    style: Object.assign({}, BTN, {
-                        background: 'transparent',
-                        color: 'var(--center-channel-color)',
-                        border: '1px solid rgba(var(--center-channel-color-rgb), 0.24)',
-                    }),
-                }, 'Cancel'),
+                e(Button, {key: 'cancel', kind: 'ghost', onClick: props.onCancel}, 'Cancel'),
             ]),
         ]);
     }
@@ -302,81 +456,45 @@
         })[0];
 
         return e('div', {
-            style: {
-                padding: '10px 12px',
-                borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.08)',
-            },
+            className: 'hw-row' + (t.status === 'done' ? ' hw-row-done' : ''),
+            'data-task-id': t.id,
         }, [
-            e('div', {
-                key: 'title',
-                style: {
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: 'var(--center-channel-color)',
-                    textDecoration: t.status === 'done' ? 'line-through' : 'none',
-                    opacity: t.status === 'done' ? 0.7 : 1,
-                    wordBreak: 'break-word',
-                },
-            }, t.title),
+            e('div', {key: 'title', className: 'hw-row-title'}, t.title),
 
-            t.description ? e('div', {
-                key: 'desc',
-                style: {
-                    fontSize: 12,
-                    color: 'rgba(var(--center-channel-color-rgb), 0.72)',
-                    marginTop: 2,
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word',
-                },
-            }, t.description) : null,
+            t.description ? e('div', {key: 'desc', className: 'hw-row-desc'}, t.description) : null,
 
-            e('div', {
-                key: 'meta',
-                style: {
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    alignItems: 'center',
-                    gap: 8,
-                    marginTop: 6,
-                    fontSize: 11,
-                    color: 'rgba(var(--center-channel-color-rgb), 0.64)',
-                },
-            }, [
-                e('span', {key: 'as'}, t.assignee_id
-                    ? (assignee ? memberLabel(assignee) : 'Assigned')
-                    : 'Unassigned'),
+            e('div', {key: 'meta', className: 'hw-row-meta'}, [
+                e('span', {key: 'as'}, [
+                    e(Icon, {key: 'i', name: 'account-outline'}),
+                    ' ' + (t.assignee_id
+                        ? (assignee ? memberLabel(assignee) : 'Assigned')
+                        : 'Unassigned'),
+                ]),
                 t.due_at ? e('span', {
                     key: 'due',
-                    style: {color: overdue ? 'var(--error-text)' : 'inherit'},
-                }, (overdue ? 'Overdue · ' : 'Due ') + formatDue(t.due_at)) : null,
+                    style: {color: overdue ? 'var(--error-text)' : 'inherit', fontWeight: overdue ? 600 : 400},
+                }, [
+                    e(Icon, {key: 'i', name: overdue ? 'alert-outline' : 'calendar-outline'}),
+                    ' ' + (overdue ? 'Overdue · ' : 'Due ') + formatDue(t.due_at),
+                ]) : null,
             ]),
 
-            e('div', {
-                key: 'actions',
-                style: {display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 8},
-            }, [
+            e('div', {key: 'actions', className: 'hw-row-actions'}, [
                 e('select', {
                     key: 'status',
                     value: t.status,
+                    className: 'hw-select hw-select-sm',
                     'aria-label': 'Task status',
                     onChange: function (ev) {
                         props.onStatus(t.id, ev.target.value);
-                    },
-                    style: {
-                        fontSize: 12,
-                        padding: '3px 6px',
-                        borderRadius: 4,
-                        background: 'var(--center-channel-bg)',
-                        color: 'var(--center-channel-color)',
-                        border: '1px solid rgba(var(--center-channel-color-rgb), 0.24)',
                     },
                 }, STATUSES.map(function (s) {
                     return e('option', {key: s.value, value: s.value}, s.label);
                 })),
 
-                props.canEdit ? e('button', {
+                props.canEdit ? e(Button, {
                     key: 'edit',
-                    style: LINKBTN,
+                    kind: 'link',
                     onClick: function () {
                         props.onEdit(t);
                     },
@@ -390,24 +508,25 @@
                     style: {display: 'inline-flex', gap: 8, alignItems: 'center'},
                 }, [
                     e('span', {key: 'q', style: {fontSize: 11}}, 'Delete?'),
-                    e('button', {
+                    e(Button, {
                         key: 'yes',
-                        style: Object.assign({}, LINKBTN, {color: 'var(--error-text)', fontWeight: 600}),
+                        kind: 'danger-link',
+                        style: {fontWeight: 600},
                         onClick: function () {
                             setConfirming(false);
                             props.onDelete(t.id);
                         },
                     }, 'Yes'),
-                    e('button', {
+                    e(Button, {
                         key: 'no',
-                        style: LINKBTN,
+                        kind: 'link',
                         onClick: function () {
                             setConfirming(false);
                         },
                     }, 'No'),
-                ]) : e('button', {
+                ]) : e(Button, {
                     key: 'del',
-                    style: Object.assign({}, LINKBTN, {color: 'var(--error-text)'}),
+                    kind: 'danger-link',
                     onClick: function () {
                         setConfirming(true);
                     },
@@ -555,46 +674,24 @@
         var hasPrev = page > 0;
         var first = page * PAGE_SIZE;
 
-        var selectStyle = {
-            fontSize: 12,
-            padding: '3px 6px',
-            borderRadius: 4,
-            background: 'var(--center-channel-bg)',
-            color: 'var(--center-channel-color)',
-            border: '1px solid rgba(var(--center-channel-color-rgb), 0.24)',
-        };
+        return e('div', {className: 'hw'}, [
 
-        return e('div', {style: {display: 'flex', flexDirection: 'column', height: '100%'}}, [
-
-            e('div', {
-                key: 'bar',
-                style: {
-                    padding: '8px 12px',
-                    borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.12)',
-                    display: 'flex',
-                    gap: 6,
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                },
-            }, [
+            e(Toolbar, {key: 'bar'}, [
                 e('select', {
                     key: 'status',
                     value: filter.status,
+                    className: 'hw-select hw-select-sm',
                     'aria-label': 'Filter by status',
                     onChange: function (ev) {
                         changeFilter({status: ev.target.value, mine: filter.mine});
                     },
-                    style: selectStyle,
                 }, [e('option', {key: 'all', value: ''}, 'All statuses')].concat(
                     STATUSES.map(function (s) {
                         return e('option', {key: s.value, value: s.value}, s.label);
                     }),
                     [e('option', {key: 'overdue', value: 'overdue'}, 'Overdue')],
                 )),
-                e('label', {
-                    key: 'mine',
-                    style: {fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4},
-                }, [
+                e('label', {key: 'mine', className: 'hw-check'}, [
                     e('input', {
                         key: 'cb',
                         type: 'checkbox',
@@ -606,12 +703,14 @@
                     }),
                     'Mine',
                 ]),
-                e('button', {
+                e(Button, {
                     key: 'new',
+                    small: true,
+                    className: 'hw-spacer',
+                    icon: editor.creating ? undefined : 'plus',
                     onClick: function () {
                         setEditor({creating: !editor.creating, editing: null});
                     },
-                    style: Object.assign({}, BTN, {marginLeft: 'auto', padding: '5px 12px', fontSize: 12}),
                 }, editor.creating ? 'Cancel' : 'New task'),
             ]),
 
@@ -636,20 +735,24 @@
                 },
             }) : null,
 
-            state.error ? e('div', {
-                key: 'err',
-                style: {padding: '10px 12px', color: 'var(--error-text)', fontSize: 13},
-            }, state.error) : null,
+            state.error ? e(ErrorNote, {key: 'err'}, state.error) : null,
 
-            e('div', {key: 'list', style: {overflowY: 'auto', flex: 1}},
-                state.loading ? e('div', {
-                    style: {padding: 16, fontSize: 13, opacity: 0.7},
-                }, 'Loading tasks…') :
-                    (state.tasks.length === 0 ? e('div', {
-                        style: {padding: 16, fontSize: 13, opacity: 0.7},
-                    }, page > 0
-                        ? 'No more tasks on this page.'
-                        : 'No tasks yet. Use "New task" to add one.') :
+            e('div', {key: 'list', className: 'hw-list'},
+                state.loading ? e(Loading, {label: 'Loading tasks'}) :
+                    (state.tasks.length === 0 ? (page > 0
+                        ? e(EmptyState, {icon: 'check-circle-outline', title: 'No more tasks'}, 'No more tasks on this page.')
+                        : e(EmptyState, {
+                            icon: 'check-circle-outline',
+                            title: (filter.status || filter.mine) ? 'No matching tasks' : 'No tasks yet',
+                            action: editor.creating ? null : e(Button, {
+                                kind: 'secondary', small: true, icon: 'plus',
+                                onClick: function () {
+                                    setEditor({creating: true, editing: null});
+                                },
+                            }, 'New task'),
+                        }, (filter.status || filter.mine)
+                            ? 'Nothing matches this filter.'
+                            : 'Use "New task" to add one for this team.')) :
                         state.tasks.map(function (t) {
                             return e(TaskRow, {
                                 key: t.id,
@@ -668,42 +771,26 @@
                             });
                         }))),
 
-            e('div', {
-                key: 'foot',
-                style: {
-                    padding: '6px 12px',
-                    borderTop: '1px solid rgba(var(--center-channel-color-rgb), 0.12)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    flexWrap: 'wrap',
-                    fontSize: 11,
-                    color: 'rgba(var(--center-channel-color-rgb), 0.56)',
-                },
-            }, [
-                e('button', {
+            e('div', {key: 'foot', className: 'hw-pager'}, [
+                e(Button, {
                     key: 'prev',
+                    kind: 'ghost',
+                    small: true,
                     disabled: !hasPrev || state.loading,
                     onClick: function () {
                         setPage(Math.max(0, page - 1));
                     },
-                    style: Object.assign({}, selectStyle, {
-                        cursor: hasPrev ? 'pointer' : 'default',
-                        opacity: hasPrev ? 1 : 0.45,
-                    }),
                 }, 'Previous'),
-                e('button', {
+                e(Button, {
                     key: 'next',
+                    kind: 'ghost',
+                    small: true,
                     disabled: !hasNext || state.loading,
                     onClick: function () {
                         setPage(page + 1);
                     },
-                    style: Object.assign({}, selectStyle, {
-                        cursor: hasNext ? 'pointer' : 'default',
-                        opacity: hasNext ? 1 : 0.45,
-                    }),
                 }, 'Next'),
-                e('span', {key: 'range'}, state.tasks.length === 0
+                e('span', {key: 'range', className: 'hw-pager-range'}, state.tasks.length === 0
                     ? 'Page ' + (page + 1)
                     : (first + 1) + '–' + (first + state.tasks.length)),
             ]),
@@ -842,10 +929,10 @@
     }
 
     function StatusNote(props) {
-        var tone = props.tone === 'error' ? 'var(--error-text)' : 'rgba(var(--center-channel-color-rgb), 0.72)';
-        return e('div', {
-            style: {padding: '12px', fontSize: 13, color: tone, lineHeight: 1.5},
-        }, props.children);
+        if (props.tone === 'error') {
+            return e(ErrorNote, {}, props.children);
+        }
+        return e('div', {className: 'hw-note'}, props.children);
     }
 
     function MeetingPanel() {
@@ -990,81 +1077,66 @@
                 });
         }
 
-        var buttonStyle = {
-            background: 'var(--button-bg)',
-            color: 'var(--button-color)',
-            border: 'none',
-            borderRadius: 4,
-            padding: '6px 14px',
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-        };
-        var linkStyle = {
-            background: 'none',
-            border: 'none',
-            padding: 0,
-            fontSize: 12,
-            color: 'var(--link-color)',
-            cursor: 'pointer',
-        };
-
         if (!channelId) {
-            return e(StatusNote, {}, 'Open a channel to see its meetings.');
+            return e('div', {className: 'hw'}, e(EmptyState, {icon: 'video-outline', title: 'No channel open'}, 'Open a channel to see its meetings.'));
         }
         if (state.loading) {
-            return e(StatusNote, {}, 'Loading meetings…');
+            return e('div', {className: 'hw'}, e(Loading, {label: 'Loading meetings'}));
         }
         if (state.error) {
-            return e(StatusNote, {tone: 'error'}, state.error);
+            return e('div', {className: 'hw'}, e(ErrorNote, {}, state.error));
         }
         if (state.meetings.length === 0) {
-            return e(StatusNote, {}, 'No meetings have been held in this channel yet. Start one with /meet and a summary can be generated from the conversation afterwards.');
+            return e('div', {className: 'hw'}, e(EmptyState, {icon: 'video-outline', title: 'No meetings yet'},
+                'No meetings have been held in this channel. Start one with /meet and a summary can be generated from the conversation afterwards.'));
         }
 
         var summary = sel.summary;
         var body = null;
 
         if (sel.loading) {
-            body = e(StatusNote, {}, 'Loading summary…');
+            body = e(Loading, {label: 'Loading summary'});
         } else if (sel.generating || (summary && summary.status === 'pending')) {
-            body = e(StatusNote, {}, 'Generating the summary from this channel’s conversation… this can take a minute.');
+            body = e('div', {}, [
+                e(Loading, {key: 'l', label: 'Generating summary'}),
+                e(StatusNote, {key: 'n'}, 'Generating the summary from this channel’s conversation… this can take a minute.'),
+            ]);
         } else if (sel.error) {
             body = e('div', {}, [
                 e(StatusNote, {key: 'e', tone: 'error'}, sel.error),
                 e('div', {key: 'r', style: {padding: '0 12px 12px'}},
-                    e('button', {style: buttonStyle, onClick: function () {
+                    e(Button, {kind: 'secondary', icon: 'refresh', onClick: function () {
                         generate(sel.id, true);
                     }}, 'Try again')),
             ]);
         } else if (!summary) {
-            body = e('div', {}, [
-                e(StatusNote, {key: 'n'}, 'No summary has been generated for this meeting yet.'),
-                e('div', {key: 'b', style: {padding: '0 12px 12px'}},
-                    e('button', {style: buttonStyle, onClick: function () {
-                        generate(sel.id, false);
-                    }}, 'Generate summary')),
-            ]);
+            body = e(EmptyState, {
+                icon: 'text-box-outline',
+                title: 'No summary yet',
+                action: e(Button, {onClick: function () {
+                    generate(sel.id, false);
+                }}, 'Generate summary'),
+            }, 'A summary can be generated from what was posted in this channel during the meeting.');
         } else if (summary.status === 'failed') {
             body = e('div', {}, [
                 e(StatusNote, {key: 'e', tone: 'error'},
                     summary.error_message || 'Summary generation failed.'),
                 e('div', {key: 'r', style: {padding: '0 12px 12px'}},
-                    e('button', {style: buttonStyle, onClick: function () {
+                    e(Button, {kind: 'secondary', icon: 'refresh', onClick: function () {
                         generate(sel.id, true);
                     }}, 'Try again')),
             ]);
         } else if (summary.status === 'empty') {
-            body = e('div', {}, [
-                e(StatusNote, {key: 'n'}, summary.summary ||
-                    'Nothing was posted in this channel during the meeting, so there is nothing to summarise.'),
-                e('div', {key: 'r', style: {padding: '0 12px 12px'}},
-                    e('button', {style: buttonStyle, onClick: function () {
-                        generate(sel.id, true);
-                    }}, 'Regenerate')),
-            ]);
+            body = e(EmptyState, {
+                icon: 'text-box-outline',
+                title: 'Nothing to summarise',
+                action: e(Button, {kind: 'secondary', icon: 'refresh', onClick: function () {
+                    generate(sel.id, true);
+                }}, 'Regenerate'),
+            }, summary.summary ||
+                'Nothing was posted in this channel during the meeting, so there is nothing to summarise.');
         } else {
-            body = e('div', {style: {padding: '12px'}}, [
+            body = e('div', {className: 'hw-fade', style: {padding: '12px'}}, [
                 e(Section, {key: 's', title: 'Meeting summary', body: summary.summary}),
                 e(Section, {key: 'k', title: 'Key discussion points', body: summary.key_points}),
                 e(Section, {key: 'd', title: 'Decisions', body: summary.decisions}),
@@ -1084,31 +1156,20 @@
                     ' · ' + formatWhen(summary.window_start) + ' – ' + formatWhen(summary.window_end)),
 
                 summary.raw_output ? e('div', {key: 'raw', style: {marginTop: 8}}, [
-                    e('button', {
+                    e(Button, {
                         key: 'toggle',
-                        style: linkStyle,
+                        kind: 'link',
                         onClick: function () {
                             setShowRaw(!showRaw);
                         },
                     }, showRaw ? 'Hide full output' : 'Show full output'),
-                    showRaw ? e('pre', {
-                        key: 'pre',
-                        style: {
-                            marginTop: 6,
-                            padding: 8,
-                            fontSize: 12,
-                            lineHeight: 1.45,
-                            whiteSpace: 'pre-wrap',
-                            background: 'rgba(var(--center-channel-color-rgb), 0.04)',
-                            borderRadius: 4,
-                            color: 'var(--center-channel-color)',
-                        },
-                    }, summary.raw_output) : null,
+                    showRaw ? e('pre', {key: 'pre', className: 'hw-pre'}, summary.raw_output) : null,
                 ]) : null,
 
                 e('div', {key: 'regen', style: {marginTop: 12}},
-                    e('button', {
-                        style: buttonStyle,
+                    e(Button, {
+                        kind: 'secondary',
+                        icon: 'refresh',
                         onClick: function () {
                             generate(sel.id, true);
                         },
@@ -1116,29 +1177,16 @@
             ]);
         }
 
-        return e('div', {style: {display: 'flex', flexDirection: 'column', height: '100%'}}, [
-            e('div', {
-                key: 'picker',
-                style: {
-                    padding: '8px 12px',
-                    borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.12)',
-                },
-            }, e('select', {
+        return e('div', {className: 'hw'}, [
+            e('div', {key: 'picker', className: 'hw-bar'}, e('select', {
                 value: sel.id || '',
+                className: 'hw-select',
+                style: {margin: 0},
                 'aria-label': 'Meeting',
                 onChange: function (ev) {
                     if (ev.target.value) {
                         loadSummary(ev.target.value);
                     }
-                },
-                style: {
-                    width: '100%',
-                    fontSize: 13,
-                    padding: '5px 6px',
-                    borderRadius: 4,
-                    background: 'var(--center-channel-bg)',
-                    color: 'var(--center-channel-color)',
-                    border: '1px solid rgba(var(--center-channel-color-rgb), 0.24)',
                 },
             }, [e('option', {key: '', value: ''}, 'Choose a meeting…')].concat(
                 state.meetings.map(function (m) {
@@ -1148,8 +1196,9 @@
                 }),
             ))),
 
-            e('div', {key: 'body', style: {overflowY: 'auto', flex: 1}},
-                sel.id ? body : e(StatusNote, {}, 'Choose a meeting to see or generate its summary.')),
+            e('div', {key: 'body', className: 'hw-list'},
+                sel.id ? body : e(EmptyState, {icon: 'text-box-outline', title: 'Meeting Intelligence'},
+                    'Choose a meeting above to read its summary, or generate one from the conversation.')),
         ]);
     }
 
@@ -1185,34 +1234,16 @@
 
     function StatusDot(props) {
         var st = supportStatus(props.status);
-        return e('div', {
-            style: {display: 'flex', alignItems: 'center', gap: 6, fontSize: 13},
-        }, [
-            e('span', {
-                key: 'd',
-                style: {
-                    width: 8, height: 8, borderRadius: '50%',
-                    background: st.dot, display: 'inline-block', flexShrink: 0,
-                },
-            }),
-            e('span', {key: 'l', style: {color: 'var(--center-channel-color)'}}, st.label),
+        return e('div', {className: 'hw-status'}, [
+            e(Dot, {key: 'd', color: st.dot}),
+            e('span', {key: 'l'}, st.label),
         ]);
     }
 
     // Everything RustDesk-related lives here, so there is exactly one place
     // that describes how to connect -- and it never claims Honco did it.
     function RustDeskHint() {
-        return e('div', {
-            style: {
-                marginTop: 10,
-                padding: '8px 10px',
-                borderRadius: 4,
-                background: 'rgba(var(--center-channel-color-rgb), 0.06)',
-                fontSize: 12,
-                lineHeight: 1.5,
-                color: 'rgba(var(--center-channel-color-rgb), 0.8)',
-            },
-        }, [
+        return e('div', {className: 'hw-hint'}, [
             e('div', {key: 't', style: {fontWeight: 600, marginBottom: 2}}, 'Connecting'),
             e('div', {key: 'b'},
                 'Open the RustDesk client and share your ID with the agent. ' +
@@ -1310,22 +1341,6 @@
                 });
         }
 
-        var btn = {
-            background: 'var(--button-bg)',
-            color: 'var(--button-color)',
-            border: 'none',
-            borderRadius: 4,
-            padding: '6px 14px',
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-        };
-        var ghost = Object.assign({}, btn, {
-            background: 'transparent',
-            color: 'var(--center-channel-color)',
-            border: '1px solid rgba(var(--center-channel-color-rgb), 0.24)',
-        });
-
         function actionsFor(r) {
             var out = [];
             var mine = r.requester_id === ctx.userId;
@@ -1334,51 +1349,38 @@
             // These mirror the server's rules. The server decides; this
             // only avoids offering a button that would be refused.
             if (state.isAgent && r.status === 'open') {
-                out.push(e('button', {key: 'acc', style: btn,
+                out.push(e(Button, {key: 'acc', small: true,
                     onClick: function () { act(r.id, 'accept'); }}, 'Accept Request'));
-                out.push(e('button', {key: 'rej', style: ghost,
+                out.push(e(Button, {key: 'rej', kind: 'ghost', small: true,
                     onClick: function () { act(r.id, 'reject'); }}, 'Decline'));
             }
             if (isMyAssignment && r.status === 'accepted') {
-                out.push(e('button', {key: 'start', style: btn,
+                out.push(e(Button, {key: 'start', small: true, icon: 'play',
                     onClick: function () { act(r.id, 'start'); }}, 'Start Session'));
             }
             if ((isMyAssignment || mine) && (r.status === 'active' || r.status === 'accepted')) {
-                out.push(e('button', {key: 'end', style: ghost,
+                out.push(e(Button, {key: 'end', kind: 'ghost', small: true,
                     onClick: function () { act(r.id, 'end'); }}, 'End Session'));
             }
             if (mine && (r.status === 'open' || r.status === 'accepted')) {
-                out.push(e('button', {key: 'can', style: ghost,
+                out.push(e(Button, {key: 'can', kind: 'ghost', small: true,
                     onClick: function () { act(r.id, 'cancel'); }}, 'Cancel'));
             }
             return out;
         }
 
         if (state.loading) {
-            return e('div', {style: {padding: 16, fontSize: 13, opacity: 0.7}}, 'Loading support requests…');
+            return e('div', {className: 'hw'}, e(Loading, {label: 'Loading support requests'}));
         }
 
-        return e('div', {style: {display: 'flex', flexDirection: 'column', height: '100%'}}, [
-            e('div', {
-                key: 'bar',
-                style: {
-                    padding: '8px 12px',
-                    borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.12)',
-                    display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
-                },
-            }, [
-                e('span', {key: 'h', style: {fontSize: 13, fontWeight: 600}}, '🛠 Remote Support'),
-                state.isAgent ? e('span', {
-                    key: 'badge',
-                    style: {
-                        fontSize: 11, padding: '2px 6px', borderRadius: 3,
-                        background: 'rgba(var(--center-channel-color-rgb), 0.08)',
-                        color: 'rgba(var(--center-channel-color-rgb), 0.72)',
-                    },
-                }, 'Support agent') : null,
-                e('button', {
+        return e('div', {className: 'hw'}, [
+            e(Toolbar, {key: 'bar', icon: 'monitor', title: 'Remote Support'}, [
+                state.isAgent ? e(Badge, {key: 'badge', tone: 'ok'}, 'Support agent') : null,
+                e(Button, {
                     key: 'new',
-                    style: Object.assign({}, btn, {marginLeft: 'auto', padding: '5px 12px', fontSize: 12}),
+                    small: true,
+                    className: 'hw-spacer',
+                    icon: form.open ? undefined : 'plus',
                     onClick: function () {
                         setForm(Object.assign({}, form, {open: !form.open, error: null}));
                     },
@@ -1388,16 +1390,12 @@
             form.open ? e('form', {
                 key: 'form',
                 onSubmit: create,
-                style: {
-                    padding: '10px 12px',
-                    borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.12)',
-                    background: 'rgba(var(--center-channel-color-rgb), 0.03)',
-                },
+                className: 'hw-form hw-fade',
             }, [
-                e('div', {key: 'lbl', style: {fontSize: 12, marginBottom: 4, opacity: 0.8}},
-                    'What is going wrong?'),
+                e('div', {key: 'lbl', className: 'hw-form-label'}, 'What is going wrong?'),
                 e('textarea', {
                     key: 'issue',
+                    className: 'hw-textarea',
                     'aria-label': 'Issue description',
                     placeholder: 'My screen is not connecting',
                     value: form.issue,
@@ -1405,34 +1403,23 @@
                     onChange: function (ev) {
                         setForm(Object.assign({}, form, {issue: ev.target.value}));
                     },
-                    style: {
-                        width: '100%', boxSizing: 'border-box', minHeight: 60, resize: 'vertical',
-                        padding: '6px 8px', marginBottom: 6, borderRadius: 4, fontSize: 13,
-                        border: '1px solid rgba(var(--center-channel-color-rgb), 0.24)',
-                        background: 'var(--center-channel-bg)', color: 'var(--center-channel-color)',
-                    },
                 }),
-                e('div', {
-                    key: 'note',
-                    style: {fontSize: 11, opacity: 0.7, marginBottom: 8},
-                }, 'Never include passwords. Honco does not need them and will not store them.'),
+                e('div', {key: 'note', className: 'hw-form-note'},
+                    'Never include passwords. Honco does not need them and will not store them.'),
                 form.error ? e('div', {
-                    key: 'err', style: {color: 'var(--error-text)', fontSize: 12, marginBottom: 6},
+                    key: 'err', role: 'alert', style: {color: 'var(--error-text)', fontSize: 12, marginBottom: 6},
                 }, form.error) : null,
-                e('button', {
-                    key: 'go', type: 'submit', disabled: form.saving,
-                    style: Object.assign({}, btn, {opacity: form.saving ? 0.6 : 1}),
-                }, form.saving ? 'Sending…' : 'Request Support'),
+                e(Button, {key: 'go', type: 'submit', disabled: form.saving},
+                    form.saving ? 'Sending…' : 'Request Support'),
             ]) : null,
 
-            state.error ? e('div', {
-                key: 'err', style: {padding: '10px 12px', color: 'var(--error-text)', fontSize: 13},
-            }, state.error) : null,
+            state.error ? e(ErrorNote, {key: 'err'}, state.error) : null,
 
-            e('div', {key: 'list', style: {overflowY: 'auto', flex: 1}},
-                state.requests.length === 0 ? e('div', {
-                    style: {padding: 16, fontSize: 13, opacity: 0.7},
-                }, 'No support requests. Use "Request Support" if you need help.') :
+            e('div', {key: 'list', className: 'hw-list'},
+                state.requests.length === 0 ? e(EmptyState, {
+                    icon: 'monitor',
+                    title: 'No support requests',
+                }, 'Use "Request Support" if you need help with your screen or device. A support agent picks it up from here.') :
                     state.requests.map(function (r) {
                         var actions = actionsFor(r);
                         return e('div', {
@@ -1441,29 +1428,19 @@
                             // future deep link) can address one request
                             // rather than guessing at DOM structure.
                             'data-request-id': r.id,
-                            style: {
-                                padding: '10px 12px',
-                                borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.08)',
-                            },
+                            className: 'hw-row',
                         }, [
                             e(StatusDot, {key: 'st', status: r.status}),
-                            e('div', {
-                                key: 'who',
-                                style: {fontSize: 12, marginTop: 4, color: 'rgba(var(--center-channel-color-rgb), 0.72)'},
-                            }, 'Requested by ' + (r.requester_id === ctx.userId ? 'you' : 'a colleague') +
-                               (r.agent_id ? ' · agent assigned' : '')),
+                            e('div', {key: 'who', className: 'hw-row-meta', style: {marginTop: 4, fontSize: 12}},
+                                'Requested by ' + (r.requester_id === ctx.userId ? 'you' : 'a colleague') +
+                                (r.agent_id ? ' · agent assigned' : '')),
                             r.issue ? e('div', {
                                 key: 'issue',
-                                style: {
-                                    fontSize: 13, marginTop: 4, whiteSpace: 'pre-wrap',
-                                    wordBreak: 'break-word', color: 'var(--center-channel-color)',
-                                },
+                                className: 'hw-row-desc',
+                                style: {fontSize: 13, marginTop: 4, color: 'var(--center-channel-color)'},
                             }, r.issue) : null,
                             r.status === 'active' ? e(RustDeskHint, {key: 'hint'}) : null,
-                            actions.length ? e('div', {
-                                key: 'actions',
-                                style: {display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8},
-                            }, actions) : null,
+                            actions.length ? e('div', {key: 'actions', className: 'hw-row-actions'}, actions) : null,
                         ]);
                     })),
         ]);
@@ -1475,24 +1452,13 @@
     function SupportCard(props) {
         var post = props.post || {};
         var c = (post.props && post.props.honco_support) || {};
-        return e('div', {
-            style: {
-                border: '1px solid rgba(var(--center-channel-color-rgb), 0.16)',
-                borderRadius: 8,
-                padding: '14px 16px',
-                margin: '4px 0',
-                maxWidth: 520,
-                background: 'rgba(var(--center-channel-color-rgb), 0.03)',
-            },
-        }, [
-            e('div', {
-                key: 'title',
-                style: {fontSize: 15, fontWeight: 700, marginBottom: 2, color: 'var(--center-channel-color)'},
-            }, '🛠 Remote Support Request'),
-            e('div', {
-                key: 'by',
-                style: {fontSize: 12, color: 'rgba(var(--center-channel-color-rgb), 0.72)', marginBottom: 8},
-            }, 'Requested by ' + (c.requester_name || 'someone')),
+        ensureStyles();
+        return e('div', {className: 'hw-card', 'data-honco-card': 'support'}, [
+            e('div', {key: 'title', className: 'hw-card-title'}, [
+                e(Icon, {key: 'i', name: 'monitor'}),
+                e('span', {key: 't'}, 'Remote Support Request'),
+            ]),
+            e('div', {key: 'by', className: 'hw-card-sub'}, 'Requested by ' + (c.requester_name || 'someone')),
             e(StatusDot, {key: 'st', status: c.status}),
             c.issue ? e('div', {
                 key: 'issue',
@@ -1501,10 +1467,10 @@
                     wordBreak: 'break-word', color: 'var(--center-channel-color)',
                 },
             }, c.issue) : null,
-            c.agent_name ? e('div', {
-                key: 'agent',
-                style: {fontSize: 12, marginTop: 6, color: 'rgba(var(--center-channel-color-rgb), 0.72)'},
-            }, 'Agent: ' + c.agent_name) : null,
+            c.agent_name ? e('div', {key: 'agent', className: 'hw-card-line'}, [
+                e(Icon, {key: 'i', name: 'account-outline'}),
+                e('span', {key: 't'}, 'Agent: ' + c.agent_name),
+            ]) : null,
         ]);
     }
 
@@ -1526,32 +1492,16 @@
     }
 
     function AdminSection(props) {
-        return e('div', {style: {marginBottom: 16}}, [
-            e('div', {
-                key: 'h',
-                style: {
-                    fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
-                    letterSpacing: 0.4, marginBottom: 6,
-                    color: 'rgba(var(--center-channel-color-rgb), 0.64)',
-                },
-            }, props.title),
+        return e('section', {style: {marginBottom: 18}, 'aria-label': props.title}, [
+            e('div', {key: 'h', className: 'hw-section-title', style: {padding: '0 0 6px'}}, props.title),
             e('div', {key: 'b'}, props.children),
         ]);
     }
 
     function KeyValue(props) {
-        return e('div', {
-            style: {
-                display: 'flex', justifyContent: 'space-between', gap: 12,
-                fontSize: 13, padding: '3px 0',
-                color: 'var(--center-channel-color)',
-            },
-        }, [
-            e('span', {key: 'k', style: {opacity: 0.8}}, props.label),
-            e('span', {key: 'v', style: {
-                fontWeight: 600, textAlign: 'right',
-                color: props.warn ? 'var(--error-text)' : undefined,
-            }}, props.value),
+        return e('div', {className: 'hw-kv'}, [
+            e('span', {key: 'k', className: 'hw-kv-k'}, props.label),
+            e('span', {key: 'v', className: 'hw-kv-v' + (props.warn ? ' hw-kv-warn' : '')}, props.value),
         ]);
     }
 
@@ -1575,20 +1525,11 @@
     function Flag(props) {
         var on = Boolean(props.value);
         var good = props.invert ? !on : on;
-        return e('div', {
-            style: {
-                display: 'flex', justifyContent: 'space-between', gap: 12,
-                fontSize: 13, padding: '3px 0',
-            },
-        }, [
-            e('span', {key: 'k', style: {opacity: 0.8}}, props.label),
-            e('span', {
-                key: 'v',
-                style: {
-                    fontWeight: 600,
-                    color: good ? 'var(--center-channel-color)' : 'var(--error-text)',
-                },
-            }, props.words ? (on ? props.words[0] : props.words[1]) : (on ? 'Enabled' : 'Disabled')),
+        return e('div', {className: 'hw-kv'}, [
+            e('span', {key: 'k', className: 'hw-kv-k'}, props.label),
+            e('span', {key: 'v', className: 'hw-kv-v'},
+                e(Badge, {tone: good ? 'ok' : 'err'},
+                    props.words ? (on ? props.words[0] : props.words[1]) : (on ? 'Enabled' : 'Disabled'))),
         ]);
     }
 
@@ -1711,11 +1652,16 @@
     // re-authorizes on the server. Nothing here is trusted because it came
     // from a search result: the id in a result is only a way to ask, never
     // a permission to see.
+    var SEARCH_ICONS = {
+        tasks: 'check-circle-outline',
+        meetings: 'video-outline',
+        recordings: 'file-video-outline',
+        summaries: 'text-box-outline',
+        support: 'monitor',
+    };
+
     function SearchResultRow(props) {
         var hit = props.hit;
-        var hover = React.useState(false);
-        var isHover = hover[0];
-        var setHover = hover[1];
 
         function open() {
             if (hit.type === 'summaries' || hit.type === 'meetings') {
@@ -1747,33 +1693,17 @@
 
         return e('button', {
             onClick: open,
-            onMouseEnter: function () {
-                setHover(true);
-            },
-            onMouseLeave: function () {
-                setHover(false);
-            },
+            className: 'hw-hit',
             'data-search-type': hit.type,
             'data-search-id': hit.id,
-            style: {
-                display: 'block',
-                width: '100%',
-                textAlign: 'left',
-                background: isHover ? 'rgba(var(--center-channel-color-rgb), 0.04)' : 'none',
-                border: 'none',
-                borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.08)',
-                padding: '9px 16px',
-                cursor: 'pointer',
-                font: 'inherit',
-            },
         }, [
-            e('div', {
-                key: 't',
-                style: {fontSize: 13, fontWeight: 600, color: 'var(--center-channel-color)'},
-            }, hit.title || '(untitled)'),
+            e('div', {key: 't', className: 'hw-row-title', style: {display: 'flex', gap: 8, alignItems: 'center'}}, [
+                e(Icon, {key: 'i', name: SEARCH_ICONS[hit.type] || 'magnify', style: {fontSize: 15, color: 'rgba(var(--center-channel-color-rgb), 0.56)', flexShrink: 0}}),
+                e('span', {key: 'x', style: {minWidth: 0}}, hit.title || '(untitled)'),
+            ]),
             e('div', {
                 key: 's',
-                style: {fontSize: 12, color: 'rgba(var(--center-channel-color-rgb), 0.64)', marginTop: 2},
+                style: {fontSize: 12, color: 'rgba(var(--center-channel-color-rgb), 0.64)', marginTop: 2, paddingLeft: 23},
             }, searchHitLine(hit)),
         ]);
     }
@@ -1838,35 +1768,23 @@
         var body;
         if (res.error) {
             // Whatever went wrong server-side, the user sees a sentence.
-            body = e('div', {
-                style: {padding: 16, fontSize: 13, color: 'var(--error-text)'},
-            }, res.error);
+            body = e(ErrorNote, {}, res.error);
         } else if (!query || query.trim().length < 2) {
-            body = e('div', {
-                style: {padding: 16, fontSize: 13, color: 'rgba(var(--center-channel-color-rgb), 0.64)'},
-            }, 'Type at least two characters to search Honco tasks, meetings, recordings, summaries and support requests. Messages and files are searched by Mattermost’s own search.');
+            body = e(EmptyState, {icon: 'magnify', title: 'Search Honco'},
+                'Type at least two characters to search tasks, meetings, recordings, summaries and support requests. Messages and files are covered by the search box at the top.');
         } else if (res.loading && !res.data) {
-            body = e('div', {
-                style: {padding: 16, fontSize: 13, color: 'rgba(var(--center-channel-color-rgb), 0.64)'},
-            }, 'Searching…');
+            body = e(Loading, {label: 'Searching'});
         } else if (res.data && res.data.total === 0) {
-            body = e('div', {
-                style: {padding: 16, fontSize: 13, color: 'rgba(var(--center-channel-color-rgb), 0.64)'},
-            }, 'No Honco results for “' + query + '”.');
+            body = e(EmptyState, {icon: 'magnify', title: 'No results'},
+                'No Honco results for “' + query + '”.');
         } else if (res.data) {
             var sections = [];
             res.data.pages.forEach(function (pg) {
                 if (!pg.hits.length) {
                     return;
                 }
-                sections.push(e('div', {key: pg.type + '-h', style: {
-                    padding: '10px 16px 4px',
-                    fontSize: 11,
-                    fontWeight: 600,
-                    letterSpacing: '0.02em',
-                    textTransform: 'uppercase',
-                    color: 'rgba(var(--center-channel-color-rgb), 0.56)',
-                }}, SEARCH_TITLES[pg.type] + ' · ' + pg.total));
+                sections.push(e('div', {key: pg.type + '-h', className: 'hw-section-title'},
+                    SEARCH_TITLES[pg.type] + ' · ' + pg.total));
                 pg.hits.forEach(function (hit) {
                     sections.push(e(SearchResultRow, {
                         key: pg.type + '-' + hit.id,
@@ -1877,27 +1795,20 @@
                 // In the All view each category is capped, so offer the way
                 // to see the rest rather than pretending this is all of it.
                 if (filter === 'all' && pg.has_more) {
-                    sections.push(e('button', {
+                    sections.push(e(Button, {
                         key: pg.type + '-more',
+                        kind: 'link',
+                        style: {display: 'block', padding: '6px 16px 10px'},
                         onClick: (function (type) {
                             return function () {
                                 setFilter(type);
                                 setPage(0);
                             };
                         }(pg.type)),
-                        style: {
-                            display: 'block',
-                            background: 'none',
-                            border: 'none',
-                            color: 'var(--link-color, var(--button-bg))',
-                            fontSize: 12,
-                            padding: '6px 16px 10px',
-                            cursor: 'pointer',
-                        },
                     }, 'See all ' + pg.total + ' ' + SEARCH_TITLES[pg.type].toLowerCase()));
                 }
             });
-            body = e('div', {}, sections);
+            body = e('div', {className: 'hw-fade'}, sections);
         }
 
         // Paging controls belong to a single category: "page 2 of everything"
@@ -1909,75 +1820,57 @@
             var from = (pg0.page * pg0.limit) + 1;
             var to = (pg0.page * pg0.limit) + pg0.hits.length;
             if (pg0.total > 0) {
-                pager = e('div', {
-                    style: {
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        padding: '8px 16px',
-                        borderTop: '1px solid rgba(var(--center-channel-color-rgb), 0.12)',
-                        fontSize: 12, color: 'rgba(var(--center-channel-color-rgb), 0.64)',
-                    },
-                }, [
-                    e('button', {
+                pager = e('div', {className: 'hw-pager', style: {padding: '6px 16px'}}, [
+                    e(Button, {
                         key: 'prev',
+                        kind: 'ghost',
+                        small: true,
                         onClick: function () {
                             setPage(Math.max(0, page - 1));
                         },
                         disabled: page === 0,
-                        style: {
-                            background: 'none', border: 'none', font: 'inherit',
-                            color: page === 0 ? 'rgba(var(--center-channel-color-rgb), 0.32)' : 'var(--button-bg)',
-                            cursor: page === 0 ? 'default' : 'pointer',
-                        },
                     }, 'Previous'),
-                    e('span', {key: 'n'}, from + '–' + to + ' of ' + pg0.total),
-                    e('button', {
+                    e(Button, {
                         key: 'next',
+                        kind: 'ghost',
+                        small: true,
                         onClick: function () {
                             setPage(page + 1);
                         },
                         disabled: !pg0.has_more,
-                        style: {
-                            background: 'none', border: 'none', font: 'inherit',
-                            color: pg0.has_more ? 'var(--button-bg)' : 'rgba(var(--center-channel-color-rgb), 0.32)',
-                            cursor: pg0.has_more ? 'pointer' : 'default',
-                        },
                     }, 'Next'),
+                    e('span', {key: 'n', className: 'hw-pager-range'}, from + '–' + to + ' of ' + pg0.total),
                 ]);
             }
         }
 
-        return e('div', {style: {display: 'flex', flexDirection: 'column', height: '100%'}}, [
-            e('div', {key: 'q', style: {padding: '12px 16px 8px'}}, [
+        return e('div', {className: 'hw'}, [
+            e('div', {key: 'q', style: {padding: '12px 16px 8px', position: 'relative'}}, [
+                e(Icon, {key: 'i', name: 'magnify', style: {
+                    position: 'absolute', left: 24, top: 19, fontSize: 16,
+                    color: 'rgba(var(--center-channel-color-rgb), 0.56)', pointerEvents: 'none',
+                }}),
                 e('input', {
                     key: 'input',
                     type: 'search',
+                    className: 'hw-input',
                     value: query,
                     placeholder: 'Search Honco',
                     'aria-label': 'Search Honco',
+                    autoComplete: 'off',
                     onChange: function (ev) {
                         setQuery(ev.target.value);
                         setPage(0);
                     },
-                    style: {
-                        width: '100%', padding: '6px 10px', fontSize: 13,
-                        borderRadius: 4,
-                        border: '1px solid rgba(var(--center-channel-color-rgb), 0.24)',
-                        background: 'var(--center-channel-bg)',
-                        color: 'var(--center-channel-color)',
-                    },
+                    style: {margin: 0, paddingLeft: 30},
                 }),
             ]),
-            e('div', {
-                key: 'filters',
-                role: 'tablist',
-                style: {
-                    display: 'flex', flexWrap: 'wrap', gap: 4, padding: '0 16px 10px',
-                },
-            }, SEARCH_TABS.map(function (t) {
+            e('div', {key: 'filters', role: 'tablist', className: 'hw-chips'}, SEARCH_TABS.map(function (t) {
                 var active = filter === t.id;
                 return e('button', {
                     key: t.id,
                     role: 'tab',
+                    className: 'hw-chip',
                     'aria-selected': active,
                     // The panel's own tabs also include "Tasks" and
                     // "Support", so these carry a distinct hook rather than
@@ -1987,15 +1880,9 @@
                         setFilter(t.id);
                         setPage(0);
                     },
-                    style: {
-                        padding: '3px 9px', fontSize: 12, fontWeight: active ? 600 : 400,
-                        borderRadius: 4, cursor: 'pointer', border: 'none',
-                        background: active ? 'rgba(var(--button-bg-rgb), 0.08)' : 'transparent',
-                        color: active ? 'var(--button-bg)' : 'rgba(var(--center-channel-color-rgb), 0.75)',
-                    },
                 }, t.label);
             })),
-            e('div', {key: 'body', style: {flex: 1, minHeight: 0, overflowY: 'auto'}}, body),
+            e('div', {key: 'body', className: 'hw-list'}, body),
             pager,
         ]);
     }
@@ -2040,9 +1927,13 @@
         }, [loadOverview, loadHealth]);
 
         if (overview.error) {
-            return e('div', {
-                style: {padding: 16, fontSize: 13, color: 'var(--error-text)'},
-            }, overview.error);
+            return e('div', {className: 'hw'}, e(ErrorNote, {}, overview.error));
+        }
+        if (overview.loading && !overview.data) {
+            return e('div', {className: 'hw'}, [
+                e(Toolbar, {key: 'bar', icon: 'shield-outline', title: 'Honco Administration'}),
+                e(Loading, {key: 'l', label: 'Loading overview'}),
+            ]);
         }
 
         var d = overview.data || {};
@@ -2053,57 +1944,40 @@
         var notif = d.notifications || {};
         var failures = d.failures || [];
 
-        return e('div', {style: {display: 'flex', flexDirection: 'column', height: '100%'}}, [
-            e('div', {
-                key: 'bar',
-                style: {
-                    padding: '8px 12px',
-                    borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.12)',
-                    display: 'flex', alignItems: 'center', gap: 8,
-                },
-            }, [
-                e('span', {key: 't', style: {fontSize: 13, fontWeight: 600}}, 'Honco Administration'),
-                e('button', {
+        return e('div', {className: 'hw'}, [
+            e(Toolbar, {key: 'bar', icon: 'shield-outline', title: 'Honco Administration'},
+                e(Button, {
                     key: 'r',
+                    small: true,
+                    kind: 'ghost',
+                    icon: 'refresh',
+                    className: 'hw-spacer',
+                    disabled: overview.loading || health.loading,
                     onClick: function () {
                         loadOverview();
                         loadHealth();
                     },
-                    style: {
-                        marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 4,
-                        cursor: 'pointer', background: 'var(--button-bg)',
-                        color: 'var(--button-color)', border: 'none', fontWeight: 600,
-                    },
-                }, 'Refresh'),
-            ]),
+                }, 'Refresh')),
 
-            e('div', {key: 'body', style: {overflowY: 'auto', flex: 1, padding: '12px'}}, [
+            e('div', {key: 'body', className: 'hw-list hw-fade', style: {padding: '12px'}}, [
 
                 e(AdminSection, {key: 'health', title: 'System health'},
-                    health.loading && !health.data ? e('div', {style: {fontSize: 13, opacity: 0.7}}, 'Checking…') :
-                        (health.error ? e('div', {style: {fontSize: 13, color: 'var(--error-text)'}}, health.error) :
+                    health.loading && !health.data ? e(Loading, {label: 'Checking health'}) :
+                        (health.error ? e(ErrorNote, {}, health.error) :
                             ((health.data && health.data.checks) || []).map(function (c) {
                                 var st = healthStyle(c.status);
-                                return e('div', {
-                                    key: c.name,
-                                    style: {
-                                        display: 'flex', alignItems: 'center', gap: 8,
-                                        fontSize: 13, padding: '3px 0',
-                                    },
-                                }, [
-                                    e('span', {
-                                        key: 'd',
-                                        style: {
-                                            width: 8, height: 8, borderRadius: '50%',
-                                            background: st.dot, flexShrink: 0,
-                                        },
-                                    }),
-                                    e('span', {key: 'n', style: {flex: 1}}, c.name),
+                                return e('div', {key: c.name, className: 'hw-kv', style: {alignItems: 'center'}}, [
+                                    e('span', {key: 'n', className: 'hw-status', style: {flex: 1}}, [
+                                        e(Dot, {key: 'd', color: st.dot}),
+                                        e('span', {key: 't'}, c.name),
+                                    ]),
                                     e('span', {
                                         key: 's',
                                         style: {
                                             fontSize: 12,
-                                            color: 'rgba(var(--center-channel-color-rgb), 0.72)',
+                                            color: c.status === 'healthy'
+                                                ? 'rgba(var(--center-channel-color-rgb), 0.72)'
+                                                : 'var(--error-text)',
                                             textAlign: 'right',
                                         },
                                     }, (c.detail || st.label) + (c.latency_ms ? ' · ' + c.latency_ms + 'ms' : '')),
@@ -2144,14 +2018,8 @@
                     e(KeyValue, {key: 'mr', label: 'Recording limit', value: humanBytes(files.max_recording_bytes)}),
                     e(Flag, {key: 'pl', label: 'Public file links', value: !files.public_links_enabled,
                         words: ['Disabled', 'ENABLED']}),
-                    e('div', {
-                        key: 'note',
-                        style: {
-                            padding: '6px 16px 2px',
-                            fontSize: 11,
-                            color: 'rgba(var(--center-channel-color-rgb), 0.56)',
-                        },
-                    }, 'Diagnostic only. Nothing here is deleted automatically; "possible orphans" includes files uploaded but not yet attached.'),
+                    e('div', {key: 'note', className: 'hw-form-note', style: {marginTop: 6}},
+                        'Diagnostic only. Nothing here is deleted automatically; "possible orphans" includes files uploaded but not yet attached.'),
                 ]),
 
                 e(AdminSection, {key: 'notif', title: 'Notifications'}, [
@@ -2173,7 +2041,10 @@
 
                 e(AdminSection, {key: 'fail', title: 'Recent failures'},
                     failures.length === 0 ?
-                        e('div', {style: {fontSize: 13, opacity: 0.7}}, 'No recent failures.') :
+                        e('div', {className: 'hw-status', style: {fontSize: 13, color: 'rgba(var(--center-channel-color-rgb), 0.72)'}}, [
+                            e(Icon, {key: 'i', name: 'check-circle-outline', style: {color: 'var(--online-indicator)', fontSize: 15}}),
+                            e('span', {key: 't'}, 'No recent failures.'),
+                        ]) :
                         failures.map(function (f, i) {
                             return e('div', {
                                 key: i,
@@ -2182,11 +2053,8 @@
                                     borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.06)',
                                 },
                             }, [
-                                e('div', {key: 'h', style: {display: 'flex', gap: 8}}, [
-                                    e('span', {
-                                        key: 'k',
-                                        style: {fontWeight: 600, color: 'var(--error-text)'},
-                                    }, f.kind),
+                                e('div', {key: 'h', style: {display: 'flex', gap: 8, alignItems: 'center'}}, [
+                                    e(Badge, {key: 'k', tone: 'err'}, f.kind),
                                     e('span', {
                                         key: 't',
                                         style: {
@@ -2235,25 +2103,22 @@
                         words: ['Configured', 'Not configured']}),
                     e(Flag, {key: 'sup', label: 'Support channel', value: sec.support_channel_configured,
                         words: ['Configured', 'Not configured']}),
-                    e('div', {
-                        key: 'note',
-                        style: {fontSize: 11, opacity: 0.7, marginTop: 6, lineHeight: 1.5},
-                    }, 'Secret values are never sent to the browser — only whether each is set.'),
+                    e('div', {key: 'note', className: 'hw-form-note', style: {marginTop: 6}},
+                        'Secret values are never sent to the browser — only whether each is set.'),
                 ]),
 
                 e(AdminSection, {key: 'net', title: 'Network'}, [
                     e(KeyValue, {key: 'site', label: 'Site URL', value: sec.site_url || '—'}),
-                    e('div', {
-                        key: 'n',
-                        style: {fontSize: 11, opacity: 0.7, marginTop: 4, lineHeight: 1.5},
-                    }, 'Mattermost checks the WebSocket origin against this. A stale value ' +
-                       'breaks real-time updates while the server still answers HTTP.'),
+                    e('div', {key: 'n', className: 'hw-form-note', style: {marginTop: 4}},
+                        'Honco Chat checks the WebSocket origin against this. A stale value ' +
+                        'breaks real-time updates while the server still answers HTTP.'),
                 ]),
 
                 e('div', {
                     key: 'foot',
+                    className: 'hw-form-note',
                     style: {
-                        fontSize: 11, opacity: 0.6, paddingTop: 4,
+                        paddingTop: 6, marginBottom: 0,
                         borderTop: '1px solid rgba(var(--center-channel-color-rgb), 0.12)',
                     },
                 }, health.data && health.data.checked_at
@@ -2312,40 +2177,36 @@
             });
         }, []);
 
-        function tabButton(id, label) {
+        ensureStyles();
+
+        // Five tabs have to fit the sidebar at its default width, so the
+        // bar uses a 12px label there and grows (with icons) when the panel
+        // is wide. The feature names stay visible in full.
+        function tabButton(id, label, icon) {
             var active = tab === id;
             return e('button', {
                 key: id,
+                className: 'hw-tab',
                 onClick: function () {
                     setTab(id);
                 },
                 'aria-selected': active,
                 role: 'tab',
-                style: {
-                    flex: 1,
-                    background: 'none',
-                    border: 'none',
-                    borderBottom: active ? '2px solid var(--button-bg)' : '2px solid transparent',
-                    padding: '9px 8px',
-                    fontSize: 13,
-                    fontWeight: active ? 600 : 400,
-                    color: active ? 'var(--center-channel-color)' : 'rgba(var(--center-channel-color-rgb), 0.64)',
-                    cursor: 'pointer',
-                },
-            }, label);
+            }, [
+                e(Icon, {key: 'i', name: icon}),
+                e('span', {key: 'l'}, label),
+            ]);
         }
 
-        return e('div', {style: {display: 'flex', flexDirection: 'column', height: '100%'}}, [
-            e('div', {
-                key: 'tabs',
-                role: 'tablist',
-                style: {
-                    display: 'flex',
-                    borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.12)',
-                },
-            }, [tabButton('tasks', 'Tasks'), tabButton('meetings', 'Meeting Intelligence'), tabButton('support', 'Support'), tabButton('search', 'Search')].concat(isAdmin ? [tabButton('admin', 'Admin')] : [])),
+        return e('div', {className: 'hw'}, [
+            e('div', {key: 'tabs', role: 'tablist', 'aria-label': 'Honco Workspace', className: 'hw-tabs'}, [
+                tabButton('tasks', 'Tasks', 'check-circle-outline'),
+                tabButton('meetings', 'Meeting Intelligence', 'text-box-outline'),
+                tabButton('support', 'Support', 'monitor'),
+                tabButton('search', 'Search', 'magnify'),
+            ].concat(isAdmin ? [tabButton('admin', 'Admin', 'shield-outline')] : [])),
 
-            e('div', {key: 'panel', style: {flex: 1, minHeight: 0}},
+            e('div', {key: 'panel', style: {flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column'}},
                 tab === 'tasks' ? e(TasksPanel) :
                     (tab === 'meetings' ? e(MeetingPanel) :
                         (tab === 'support' ? e(SupportPanel) :
@@ -2504,56 +2365,30 @@
             };
         }, [card.meeting_id]);
 
-        var btn = {
-            background: 'var(--button-bg)',
-            color: 'var(--button-color)',
-            border: 'none',
-            borderRadius: 4,
-            padding: '8px 18px',
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-            textDecoration: 'none',
-            display: 'inline-block',
-        };
-        var secondary = {
-            background: 'transparent',
-            color: 'var(--button-bg)',
-            border: '1px solid var(--button-bg)',
-            borderRadius: 4,
-            padding: '6px 14px',
-            fontSize: 12,
-            fontWeight: 600,
-            cursor: 'pointer',
-            marginRight: 8,
-        };
+        ensureStyles();
 
         var actions = [];
         if (card.recording_status === 'ready' && card.recording_file_id) {
             actions.push(e('a', {
                 key: 'rec',
+                className: 'hw-btn hw-btn-secondary hw-btn-sm',
                 href: '/api/v4/files/' + card.recording_file_id,
                 target: '_blank',
                 rel: 'noopener noreferrer',
-                style: Object.assign({}, secondary, {textDecoration: 'none'}),
-            }, 'View Recording'));
+            }, [e(Icon, {key: 'i', name: 'play'}), 'View Recording']));
         } else if (card.recording_status === 'failed') {
-            actions.push(e('span', {
-                key: 'recfail',
-                style: {fontSize: 12, color: 'var(--error-text)', marginRight: 8},
-            }, 'Recording failed'));
+            actions.push(e(Badge, {key: 'recfail', tone: 'err'}, 'Recording failed'));
         } else if (card.recording_status === 'unavailable') {
             // The recording existed but its file is gone. Said plainly,
             // rather than offering a link the server would refuse.
-            actions.push(e('span', {
-                key: 'recgone',
-                style: {fontSize: 12, color: 'rgba(var(--center-channel-color-rgb), 0.64)', marginRight: 8},
-            }, 'Recording unavailable'));
+            actions.push(e(Badge, {key: 'recgone'}, 'Recording unavailable'));
         }
         if (card.has_summary) {
-            actions.push(e('button', {
+            actions.push(e(Button, {
                 key: 'sum',
-                style: secondary,
+                kind: 'secondary',
+                small: true,
+                icon: 'text-box-outline',
                 onClick: function () {
                     // The summary lives in the Honco panel; point the user
                     // at it rather than duplicating it inside the card.
@@ -2564,44 +2399,17 @@
             }, 'View Summary'));
         }
 
-        return e('div', {
-            style: {
-                border: '1px solid rgba(var(--center-channel-color-rgb), 0.16)',
-                borderRadius: 8,
-                padding: '14px 16px',
-                margin: '4px 0',
-                maxWidth: 520,
-                background: 'rgba(var(--center-channel-color-rgb), 0.03)',
-            },
-        }, [
-            e('div', {
-                key: 'title',
-                style: {display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2},
-            }, [
-                e('span', {key: 'i', style: {fontSize: 16}}, '🎥'),
-                e('span', {
-                    key: 't',
-                    style: {fontSize: 15, fontWeight: 700, color: 'var(--center-channel-color)'},
-                }, card.topic || 'Meeting'),
+        return e('div', {className: 'hw-card', 'data-honco-card': 'meeting'}, [
+            e('div', {key: 'title', className: 'hw-card-title'}, [
+                e(Icon, {key: 'i', name: 'video-outline'}),
+                e('span', {key: 't'}, card.topic || 'Meeting'),
             ]),
 
-            e('div', {
-                key: 'by',
-                style: {fontSize: 12, color: 'rgba(var(--center-channel-color-rgb), 0.72)', marginBottom: 8},
-            }, 'Started by ' + (card.creator_name || 'someone')),
+            e('div', {key: 'by', className: 'hw-card-sub'}, 'Started by ' + (card.creator_name || 'someone')),
 
-            e('div', {
-                key: 'status',
-                style: {display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, marginBottom: 10},
-            }, [
-                e('span', {
-                    key: 'dot',
-                    style: {
-                        width: 8, height: 8, borderRadius: '50%',
-                        background: st.dot, display: 'inline-block',
-                    },
-                }),
-                e('span', {key: 'l', style: {color: 'var(--center-channel-color)'}}, st.label),
+            e('div', {key: 'status', className: 'hw-status', style: {marginBottom: 10}}, [
+                e(Dot, {key: 'dot', color: st.dot}),
+                e('span', {key: 'l'}, st.label),
                 card.scheduled_for ? e('span', {
                     key: 'when',
                     style: {color: 'rgba(var(--center-channel-color-rgb), 0.64)'},
@@ -2612,15 +2420,10 @@
                 key: 'people',
                 style: {marginBottom: 12},
             }, [
-                e('div', {
-                    key: 'count',
-                    style: {
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: 'rgba(var(--center-channel-color-rgb), 0.72)',
-                        marginBottom: 6,
-                    },
-                }, '👥 ' + card.participant_count + ' participant' + (card.participant_count === 1 ? '' : 's')),
+                e('div', {key: 'count', className: 'hw-card-line', style: {fontWeight: 600, marginBottom: 6}}, [
+                    e(Icon, {key: 'i', name: 'account-outline'}),
+                    e('span', {key: 't'}, card.participant_count + ' participant' + (card.participant_count === 1 ? '' : 's')),
+                ]),
                 e('div', {key: 'list'}, (card.participants || []).map(function (name, i) {
                     return e('div', {
                         key: i,
@@ -2634,25 +2437,26 @@
 
             joinable ? e('div', {key: 'join', style: {marginBottom: actions.length ? 12 : 0}},
                 e('a', {
+                    className: 'hw-btn',
+                    style: {padding: '8px 18px'},
                     href: card.join_url,
                     target: '_blank',
                     rel: 'noopener noreferrer',
-                    style: btn,
-                }, 'Join Meeting')) : null,
+                }, [e(Icon, {key: 'i', name: 'video-outline'}), 'Join Meeting'])) : null,
 
             (card.recording_status === 'ready' || card.has_summary) ? e('div', {
                 key: 'available',
-                style: {
-                    fontSize: 12,
-                    color: 'rgba(var(--center-channel-color-rgb), 0.72)',
-                    marginBottom: 6,
-                },
+                style: {marginBottom: 8},
             }, [
-                card.recording_status === 'ready' ? e('div', {key: 'r'}, '🎬 Recording available') : null,
-                card.has_summary ? e('div', {key: 's'}, '📝 Meeting Summary') : null,
+                card.recording_status === 'ready' ? e('div', {key: 'r', className: 'hw-card-line'}, [
+                    e(Icon, {key: 'i', name: 'file-video-outline'}), e('span', {key: 't'}, 'Recording available'),
+                ]) : null,
+                card.has_summary ? e('div', {key: 's', className: 'hw-card-line'}, [
+                    e(Icon, {key: 'i', name: 'text-box-outline'}), e('span', {key: 't'}, 'Meeting Summary'),
+                ]) : null,
             ]) : null,
 
-            actions.length ? e('div', {key: 'actions'}, actions) : null,
+            actions.length ? e('div', {key: 'actions', className: 'hw-actions'}, actions) : null,
         ]);
     }
 
@@ -2677,6 +2481,7 @@
         // Kept for the panel to read the current team/user from the
         // webapp's own store rather than guessing from the URL.
         window.store = store;
+        ensureStyles();
 
         // The meeting card. Registered as a post-type component so the
         // card IS the post -- one post per meeting, updated in place,
@@ -2719,30 +2524,32 @@
         // The App Bar is where current Mattermost surfaces plugin entry
         // points. Passing rhsComponent/rhsTitle makes the registry create
         // the RHS component and wire the toggle for us.
-        var appBarRegistered = false;
+        var rhs = null;
         if (typeof registry.registerAppBarComponent === 'function') {
             try {
-                registry.registerAppBarComponent(ICON_URL, undefined, 'Honco Workspace', null, HoncoPanel, 'Honco Workspace');
-                appBarRegistered = true;
+                var reg = registry.registerAppBarComponent(ICON_URL, undefined, 'Honco Workspace', null, HoncoPanel, 'Honco Workspace');
+                rhs = reg && reg.rhsComponent ? reg.rhsComponent : null;
             } catch (err) {
-                appBarRegistered = false;
+                rhs = null;
             }
         }
-
-        // Channel-header button as well, so the panel is reachable even
-        // where the App Bar is disabled. Registered against its own RHS
-        // instance only when the App Bar did not already create one.
-        if (!appBarRegistered) {
-            var rhs = registry.registerRightHandSidebarComponent(HoncoPanel, 'Honco Workspace');
-            registry.registerChannelHeaderButtonAction(
-                ChecklistIcon,
-                function () {
-                    store.dispatch(rhs.toggleRHSPlugin);
-                },
-                'Honco Workspace',
-                'Honco Workspace',
-            );
+        if (!rhs) {
+            rhs = registry.registerRightHandSidebarComponent(HoncoPanel, 'Honco Workspace');
         }
+
+        // Channel-header button on the SAME panel instance. Mattermost
+        // hides channel-header plugin buttons on desktop while the App Bar
+        // is shown, and lists them in the channel menu on phones -- where
+        // there is no App Bar at all. Without this the panel is
+        // unreachable on a phone.
+        registry.registerChannelHeaderButtonAction(
+            ChecklistIcon,
+            function () {
+                store.dispatch(rhs.toggleRHSPlugin);
+            },
+            'Honco Workspace',
+            'Honco Workspace',
+        );
 
         // A "Honco" option in Mattermost's own search box, beside Messages
         // and Files.

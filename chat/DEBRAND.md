@@ -28,6 +28,8 @@ python3 branding/debrand-sentry.py                 # crash reporter
 python3 branding/debrand-support.py                # our own support links
 python3 branding/debrand-polish.py                 # product name in translations
 python3 branding/debrand-residual.py               # strings-check leftovers (see below)
+python3 branding/debrand-webapp.py                 # web client static shell (title, PWA name)
+python3 branding/debrand-ui.py                     # web client logo, edition badge, footer
 ./branding/debrand-mobile.sh                       # app identity
 python3 branding/debrand-mobile-sentry.py          # mobile crash reporter
 
@@ -218,6 +220,15 @@ Built with Node 24 (`npm ci && npm run build` in `server/webapp`), output in
   mention it, nearly all as `@mattermost/*` import paths or copyright headers.
   The translated strings are already handled by `debrand-polish.py` and reach the
   bundle (English is inlined into the main JS chunk, not a separate i18n file).
+- **The logo, the "TEAM EDITION" badge and the "© Mattermost Inc." footer are
+  React components, not strings.** `debrand-ui.py` adds one wordmark component
+  (`components/common/svg_images_components/honco_logo.tsx`, drawn in
+  `currentColor`) and points the login/signup header, the global header's
+  product branding, both not-logged-in footers (login routes and the older
+  password-reset template) and the About dialog at it. It touches nothing
+  under `@mattermost/*`. After it, `npm run build` in `webapp/channels`; the
+  server reads root.html from disk per request, so the new chunks are served
+  without a restart (verified: the served main chunk hash changed at once).
 - **The static shell needs two separate fixes**, both in `debrand-webapp.py`:
   `channels/src/root.html` for `<title>` and `application-name`, and the
   `WebpackPwaManifest` block in `channels/webpack.config.js`, which is what
@@ -227,8 +238,10 @@ Built with Node 24 (`npm ci && npm run build` in `server/webapp`), output in
 
 ## Not done yet
 
-- **Logos and favicons are still the vendor's.** `channels/src/images/logo*.png|svg`
-  and `channels/src/images/favicon/` need real Honco artwork; nothing here can
+- **Favicons and e-mail/PNG logos are still the vendor's.** The login page and
+  global header now show the Honco wordmark (`debrand-ui.py`), but
+  `channels/src/images/logo*.png` (used in e-mails) and
+  `channels/src/images/favicon/` need real Honco artwork; nothing here can
   invent it.
 - **Push notifications** — need our own push-proxy running with Honco's Firebase
   (FCM) and Apple (APNs) keys. The vendor's push service is gone, so notifications
