@@ -394,6 +394,9 @@ func (s *Store) ListTasks(teamID string, f TaskFilter) ([]*Task, error) {
 	if f.DueBefore > 0 {
 		add("(due_at > 0 AND due_at <= $%d)", f.DueBefore)
 	}
+	if f.Overdue {
+		add("(due_at > 0 AND due_at < $%d AND status <> 'done')", nowMillis())
+	}
 
 	args = append(args, f.Limit, f.Offset)
 	q := `SELECT ` + taskColumns + ` FROM honco_tasks WHERE ` + strings.Join(where, " AND ") +

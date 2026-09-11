@@ -301,6 +301,26 @@ func (p *Plugin) handleAdminOverview(w http.ResponseWriter, r *http.Request) {
 		p.writeErr(w, http.StatusInternalServerError, "could not read file statistics", err)
 		return
 	}
+	// Notification status: what has been sent, by kind, and when the last
+	// one went out. Aggregates only -- no recipient, no text.
+	notifKinds, err := p.store.CountNotificationsByKind()
+	if err != nil {
+		p.writeErr(w, http.StatusInternalServerError, "could not read notification counts", err)
+		return
+	}
+	var notifTotal int
+	for _, n := range notifKinds {
+		notifTotal += n
+	}
+	var notifLast int64
+	_ = p.store.db.QueryRow(`SELECT coalesce(max(created_at), 0) FROM honco_notifications`).Scan(&notifLast)
+	notifications := map[string]any{
+		"total":          notifTotal,
+		"by_kind":        notifKinds,
+		"last_sent_at":   notifLast,
+		"bot_configured": p.botID != "",
+	}
+
 	files.MaxRecordingBytes = p.recordingLimit()
 	if cfg := p.API.GetConfig(); cfg != nil {
 		if cfg.FileSettings.MaxFileSize != nil {
@@ -312,10 +332,11 @@ func (p *Plugin) handleAdminOverview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"usage":    usage,
-		"failures": failures,
-		"files":    files,
-		"security": p.adminSecurity(),
+		"usage":         usage,
+		"failures":      failures,
+		"files":         files,
+		"notifications": notifications,
+		"security":      p.adminSecurity(),
 		"plugin": adminPlugin{
 			ID:                  "com.honco.workspace",
 			Version:             "0.1.0",

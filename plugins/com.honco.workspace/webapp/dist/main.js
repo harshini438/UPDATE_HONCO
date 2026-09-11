@@ -479,7 +479,12 @@
             });
             var q = '/tasks?team_id=' + encodeURIComponent(teamId) +
                     '&limit=' + PAGE_SIZE + '&page=' + pageNum;
-            if (f.status) {
+            // "Overdue" is a view, not a status: due in the past and not
+            // done. The server decides what "now" is, so the list is right
+            // whatever the browser's clock says.
+            if (f.status === 'overdue') {
+                q += '&overdue=1';
+            } else if (f.status) {
                 q += '&status=' + encodeURIComponent(f.status);
             }
             if (f.mine && userId) {
@@ -584,6 +589,7 @@
                     STATUSES.map(function (s) {
                         return e('option', {key: s.value, value: s.value}, s.label);
                     }),
+                    [e('option', {key: 'overdue', value: 'overdue'}, 'Overdue')],
                 )),
                 e('label', {
                     key: 'mine',
@@ -2044,6 +2050,7 @@
         var sec = d.security || {};
         var plug = d.plugin || {};
         var files = d.files || {};
+        var notif = d.notifications || {};
         var failures = d.failures || [];
 
         return e('div', {style: {display: 'flex', flexDirection: 'column', height: '100%'}}, [
@@ -2146,6 +2153,15 @@
                         },
                     }, 'Diagnostic only. Nothing here is deleted automatically; "possible orphans" includes files uploaded but not yet attached.'),
                 ]),
+
+                e(AdminSection, {key: 'notif', title: 'Notifications'}, [
+                    e(Flag, {key: 'bot', label: 'Notification bot', value: notif.bot_configured,
+                        words: ['Configured', 'Missing']}),
+                    e(KeyValue, {key: 'total', label: 'Sent (total)', value: notif.total || 0}),
+                    e(KeyValue, {key: 'last', label: 'Last sent', value: notif.last_sent_at ? formatWhen(notif.last_sent_at) : 'never'}),
+                ].concat(Object.keys(notif.by_kind || {}).sort().map(function (k) {
+                    return e(KeyValue, {key: 'k-' + k, label: '  ' + k.replace(/_/g, ' '), value: notif.by_kind[k]});
+                }))),
 
                 e(AdminSection, {key: 'plugin', title: 'Honco plugin'}, [
                     e(KeyValue, {key: 'v', label: 'Version', value: plug.version || '—'}),

@@ -108,8 +108,12 @@ type TaskFilter struct {
 	AssigneeID string
 	CreatorID  string
 	DueBefore  int64
-	Limit      int
-	Offset     int
+	// Overdue is the view people actually want when they ask for "what is
+	// late": due in the past AND not done. DueBefore alone would also list
+	// finished work that happened to have a date.
+	Overdue bool
+	Limit   int
+	Offset  int
 }
 
 const (

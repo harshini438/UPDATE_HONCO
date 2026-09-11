@@ -181,6 +181,9 @@ func (p *Plugin) handleListTasks(w http.ResponseWriter, r *http.Request) {
 		}
 		filter.Status = TaskStatus(s)
 	}
+	if v := q.Get("overdue"); v == "1" || v == "true" {
+		filter.Overdue = true
+	}
 	if v := q.Get("due_before"); v != "" {
 		n, err := strconv.ParseInt(v, 10, 64)
 		if err != nil || n < 0 {
