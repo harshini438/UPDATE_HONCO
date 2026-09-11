@@ -108,5 +108,7 @@ func (p *Plugin) OnDeactivate() error {
 // below relies on that and on nothing else for identity.
 func (p *Plugin) ServeHTTP(_ *plugin.Context, w http.ResponseWriter, r *http.Request) {
 	p.routerOnce.Do(func() { p.router = p.newRouter() })
-	p.router.ServeHTTP(w, r)
+	// Mattermost's own header and rate-limit middleware does not run for
+	// plugin routes (see hardening.go), so they are applied here.
+	securityHeaders(p.limitByRoute(p.router)).ServeHTTP(w, r)
 }
