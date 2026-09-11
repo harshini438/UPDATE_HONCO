@@ -1569,6 +1569,414 @@
         ]);
     }
 
+    // --- Global search -----------------------------------------------------
+
+    // Honco entities in Mattermost's own search box.
+    //
+    // Selecting the "Honco" pill next to Messages and Files and pressing
+    // Enter hands the typed terms to SearchIntent, which opens this panel.
+    // Messages and Files keep working exactly as they did -- this adds a
+    // place to look, it does not replace the one that already exists.
+    var SearchIntent = {
+        query: '',
+        listeners: [],
+        open: function (query) {
+            this.query = query || '';
+            this.listeners.forEach(function (fn) {
+                try {
+                    fn(query || '');
+                } catch (err) { /* one bad listener must not stop the rest */ }
+            });
+        },
+        subscribe: function (fn) {
+            this.listeners.push(fn);
+            var self = this;
+            return function () {
+                var i = self.listeners.indexOf(fn);
+                if (i >= 0) {
+                    self.listeners.splice(i, 1);
+                }
+            };
+        },
+    };
+
+    // Navigating to a result.
+    //
+    // Both of these go through Mattermost's own routes, which is the point:
+    // a permalink is resolved by the server, against the reader's session.
+    // If the caller somehow held an id they may not read, the destination
+    // refuses -- the search result is a way to ask, never a grant.
+    function teamNameForChannel(channelId) {
+        try {
+            var st = window.store.getState();
+            var ch = st.entities.channels.channels[channelId];
+            var teamId = (ch && ch.team_id) || st.entities.teams.currentTeamId;
+            var team = st.entities.teams.teams[teamId] ||
+                st.entities.teams.teams[st.entities.teams.currentTeamId];
+            return team ? team.name : null;
+        } catch (err) {
+            return null;
+        }
+    }
+
+    function goToPost(channelId, postId) {
+        var team = teamNameForChannel(channelId);
+        if (team && postId) {
+            window.location.href = '/' + team + '/pl/' + postId;
+        }
+    }
+
+    function goToChannel(channelId) {
+        try {
+            var st = window.store.getState();
+            var ch = st.entities.channels.channels[channelId];
+            var team = teamNameForChannel(channelId);
+            if (ch && team) {
+                window.location.href = '/' + team + '/channels/' + ch.name;
+            }
+        } catch (err) { /* staying put is better than a broken URL */ }
+    }
+
+    // The categories, in the order they are shown. "All" is a view over the
+    // other five, not a sixth kind of thing.
+    var SEARCH_TABS = [
+        {id: 'all', label: 'All'},
+        {id: 'tasks', label: 'Tasks'},
+        {id: 'meetings', label: 'Meetings'},
+        {id: 'recordings', label: 'Recordings'},
+        {id: 'summaries', label: 'Summaries'},
+        {id: 'support', label: 'Support'},
+    ];
+
+    var SEARCH_TITLES = {
+        tasks: 'Tasks',
+        meetings: 'Meetings',
+        recordings: 'Recordings',
+        summaries: 'Summaries',
+        support: 'Support',
+    };
+
+    // A task's status reads as a sentence; a meeting's is already one.
+    var TASK_STATUS_LABEL = {todo: 'To do', in_progress: 'In progress', done: 'Done'};
+
+    function searchHitLine(hit) {
+        if (hit.type === 'tasks') {
+            var bits = [TASK_STATUS_LABEL[hit.status] || hit.status];
+            if (hit.due_at) {
+                bits.push('Due ' + formatDue(hit.due_at));
+            }
+            return bits.join(' · ');
+        }
+        if (hit.type === 'support') {
+            return (SUPPORT_STATUS[hit.status] ? SUPPORT_STATUS[hit.status].label : hit.status) +
+                (hit.at ? ' · ' + formatWhen(hit.at) : '');
+        }
+        if (hit.type === 'meetings') {
+            var m = (STATUS_STYLE[hit.status] ? STATUS_STYLE[hit.status].label : hit.status);
+            return m + (hit.at ? ' · ' + formatWhen(hit.at) : '');
+        }
+        if (hit.type === 'recordings') {
+            return [hit.status, hit.subtitle, formatWhen(hit.at)].filter(Boolean).join(' · ');
+        }
+        return [hit.subtitle, formatWhen(hit.at)].filter(Boolean).join(' · ');
+    }
+
+    // What clicking a result does.
+    //
+    // Every one of these lands on an existing surface -- a channel, a
+    // meeting card, the Meeting Intelligence tab -- and every one of those
+    // re-authorizes on the server. Nothing here is trusted because it came
+    // from a search result: the id in a result is only a way to ask, never
+    // a permission to see.
+    function SearchResultRow(props) {
+        var hit = props.hit;
+        var hover = React.useState(false);
+        var isHover = hover[0];
+        var setHover = hover[1];
+
+        function open() {
+            if (hit.type === 'summaries' || hit.type === 'meetings') {
+                if (hit.channel_id && hit.meeting_id) {
+                    MeetingIntent.remember(hit.channel_id, hit.meeting_id);
+                }
+                if (hit.post_id) {
+                    goToPost(hit.channel_id, hit.post_id);
+                }
+                if (hit.type === 'summaries' && hit.meeting_id) {
+                    MeetingIntent.open(hit.meeting_id);
+                }
+                return;
+            }
+            if (hit.type === 'recordings' || hit.type === 'support') {
+                // Recordings are posted into their channel with the file
+                // attached, and a support request has its own card there.
+                if (hit.post_id) {
+                    goToPost(hit.channel_id, hit.post_id);
+                } else if (hit.channel_id) {
+                    goToChannel(hit.channel_id);
+                }
+                return;
+            }
+            if (hit.type === 'tasks') {
+                props.onOpenTask(hit);
+            }
+        }
+
+        return e('button', {
+            onClick: open,
+            onMouseEnter: function () {
+                setHover(true);
+            },
+            onMouseLeave: function () {
+                setHover(false);
+            },
+            'data-search-type': hit.type,
+            'data-search-id': hit.id,
+            style: {
+                display: 'block',
+                width: '100%',
+                textAlign: 'left',
+                background: isHover ? 'rgba(var(--center-channel-color-rgb), 0.04)' : 'none',
+                border: 'none',
+                borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.08)',
+                padding: '9px 16px',
+                cursor: 'pointer',
+                font: 'inherit',
+            },
+        }, [
+            e('div', {
+                key: 't',
+                style: {fontSize: 13, fontWeight: 600, color: 'var(--center-channel-color)'},
+            }, hit.title || '(untitled)'),
+            e('div', {
+                key: 's',
+                style: {fontSize: 12, color: 'rgba(var(--center-channel-color-rgb), 0.64)', marginTop: 2},
+            }, searchHitLine(hit)),
+        ]);
+    }
+
+    function SearchPanel(props) {
+        var q = React.useState(SearchIntent.query || '');
+        var query = q[0];
+        var setQuery = q[1];
+
+        var f = React.useState('all');
+        var filter = f[0];
+        var setFilter = f[1];
+
+        var p = React.useState(0);
+        var page = p[0];
+        var setPage = p[1];
+
+        var r = React.useState({data: null, loading: false, error: null});
+        var res = r[0];
+        var setRes = r[1];
+
+        // A search the user started from Mattermost's search box arrives
+        // here. Changing the terms resets to the first page, or page 3 of
+        // the previous search would silently become page 3 of this one.
+        React.useEffect(function () {
+            return SearchIntent.subscribe(function (next) {
+                setQuery(next);
+                setPage(0);
+                setFilter('all');
+            });
+        }, []);
+
+        var run = React.useCallback(function (term, type, pageNo) {
+            if (!term || term.trim().length < 2) {
+                setRes({data: null, loading: false, error: null});
+                return;
+            }
+            setRes(function (prev) {
+                return {data: prev.data, loading: true, error: null};
+            });
+            request('GET', '/search?q=' + encodeURIComponent(term.trim()) +
+                '&type=' + encodeURIComponent(type) + '&page=' + pageNo).then(function (d) {
+                setRes({data: d, loading: false, error: null});
+            }).catch(function (err) {
+                setRes({data: null, loading: false, error: err.message});
+            });
+        }, []);
+
+        React.useEffect(function () {
+            run(query, filter, page);
+        }, [query, filter, page, run]);
+
+        function openTask() {
+            // A task has no post to jump to, so the useful action is the
+            // Tasks tab, which loads it through the ordinary tasks endpoint
+            // -- and that endpoint authorizes again, as it always has.
+            if (props && props.onOpenTasks) {
+                props.onOpenTasks();
+            }
+        }
+
+        var body;
+        if (res.error) {
+            // Whatever went wrong server-side, the user sees a sentence.
+            body = e('div', {
+                style: {padding: 16, fontSize: 13, color: 'var(--error-text)'},
+            }, res.error);
+        } else if (!query || query.trim().length < 2) {
+            body = e('div', {
+                style: {padding: 16, fontSize: 13, color: 'rgba(var(--center-channel-color-rgb), 0.64)'},
+            }, 'Type at least two characters to search Honco tasks, meetings, recordings, summaries and support requests. Messages and files are searched by Mattermost’s own search.');
+        } else if (res.loading && !res.data) {
+            body = e('div', {
+                style: {padding: 16, fontSize: 13, color: 'rgba(var(--center-channel-color-rgb), 0.64)'},
+            }, 'Searching…');
+        } else if (res.data && res.data.total === 0) {
+            body = e('div', {
+                style: {padding: 16, fontSize: 13, color: 'rgba(var(--center-channel-color-rgb), 0.64)'},
+            }, 'No Honco results for “' + query + '”.');
+        } else if (res.data) {
+            var sections = [];
+            res.data.pages.forEach(function (pg) {
+                if (!pg.hits.length) {
+                    return;
+                }
+                sections.push(e('div', {key: pg.type + '-h', style: {
+                    padding: '10px 16px 4px',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: '0.02em',
+                    textTransform: 'uppercase',
+                    color: 'rgba(var(--center-channel-color-rgb), 0.56)',
+                }}, SEARCH_TITLES[pg.type] + ' · ' + pg.total));
+                pg.hits.forEach(function (hit) {
+                    sections.push(e(SearchResultRow, {
+                        key: pg.type + '-' + hit.id,
+                        hit: hit,
+                        onOpenTask: openTask,
+                    }));
+                });
+                // In the All view each category is capped, so offer the way
+                // to see the rest rather than pretending this is all of it.
+                if (filter === 'all' && pg.has_more) {
+                    sections.push(e('button', {
+                        key: pg.type + '-more',
+                        onClick: (function (type) {
+                            return function () {
+                                setFilter(type);
+                                setPage(0);
+                            };
+                        }(pg.type)),
+                        style: {
+                            display: 'block',
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--link-color, var(--button-bg))',
+                            fontSize: 12,
+                            padding: '6px 16px 10px',
+                            cursor: 'pointer',
+                        },
+                    }, 'See all ' + pg.total + ' ' + SEARCH_TITLES[pg.type].toLowerCase()));
+                }
+            });
+            body = e('div', {}, sections);
+        }
+
+        // Paging controls belong to a single category: "page 2 of everything"
+        // would have to interleave five result sets, and the ordering that
+        // implies is not one this ranking can honestly claim.
+        var pager = null;
+        if (filter !== 'all' && res.data && res.data.pages.length) {
+            var pg0 = res.data.pages[0];
+            var from = (pg0.page * pg0.limit) + 1;
+            var to = (pg0.page * pg0.limit) + pg0.hits.length;
+            if (pg0.total > 0) {
+                pager = e('div', {
+                    style: {
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '8px 16px',
+                        borderTop: '1px solid rgba(var(--center-channel-color-rgb), 0.12)',
+                        fontSize: 12, color: 'rgba(var(--center-channel-color-rgb), 0.64)',
+                    },
+                }, [
+                    e('button', {
+                        key: 'prev',
+                        onClick: function () {
+                            setPage(Math.max(0, page - 1));
+                        },
+                        disabled: page === 0,
+                        style: {
+                            background: 'none', border: 'none', font: 'inherit',
+                            color: page === 0 ? 'rgba(var(--center-channel-color-rgb), 0.32)' : 'var(--button-bg)',
+                            cursor: page === 0 ? 'default' : 'pointer',
+                        },
+                    }, 'Previous'),
+                    e('span', {key: 'n'}, from + '–' + to + ' of ' + pg0.total),
+                    e('button', {
+                        key: 'next',
+                        onClick: function () {
+                            setPage(page + 1);
+                        },
+                        disabled: !pg0.has_more,
+                        style: {
+                            background: 'none', border: 'none', font: 'inherit',
+                            color: pg0.has_more ? 'var(--button-bg)' : 'rgba(var(--center-channel-color-rgb), 0.32)',
+                            cursor: pg0.has_more ? 'pointer' : 'default',
+                        },
+                    }, 'Next'),
+                ]);
+            }
+        }
+
+        return e('div', {style: {display: 'flex', flexDirection: 'column', height: '100%'}}, [
+            e('div', {key: 'q', style: {padding: '12px 16px 8px'}}, [
+                e('input', {
+                    key: 'input',
+                    type: 'search',
+                    value: query,
+                    placeholder: 'Search Honco',
+                    'aria-label': 'Search Honco',
+                    onChange: function (ev) {
+                        setQuery(ev.target.value);
+                        setPage(0);
+                    },
+                    style: {
+                        width: '100%', padding: '6px 10px', fontSize: 13,
+                        borderRadius: 4,
+                        border: '1px solid rgba(var(--center-channel-color-rgb), 0.24)',
+                        background: 'var(--center-channel-bg)',
+                        color: 'var(--center-channel-color)',
+                    },
+                }),
+            ]),
+            e('div', {
+                key: 'filters',
+                role: 'tablist',
+                style: {
+                    display: 'flex', flexWrap: 'wrap', gap: 4, padding: '0 16px 10px',
+                },
+            }, SEARCH_TABS.map(function (t) {
+                var active = filter === t.id;
+                return e('button', {
+                    key: t.id,
+                    role: 'tab',
+                    'aria-selected': active,
+                    // The panel's own tabs also include "Tasks" and
+                    // "Support", so these carry a distinct hook rather than
+                    // relying on a label that appears twice on screen.
+                    'data-search-filter': t.id,
+                    onClick: function () {
+                        setFilter(t.id);
+                        setPage(0);
+                    },
+                    style: {
+                        padding: '3px 9px', fontSize: 12, fontWeight: active ? 600 : 400,
+                        borderRadius: 4, cursor: 'pointer', border: 'none',
+                        background: active ? 'rgba(var(--button-bg-rgb), 0.08)' : 'transparent',
+                        color: active ? 'var(--button-bg)' : 'rgba(var(--center-channel-color-rgb), 0.75)',
+                    },
+                }, t.label);
+            })),
+            e('div', {key: 'body', style: {flex: 1, minHeight: 0, overflowY: 'auto'}}, body),
+            pager,
+        ]);
+    }
+
     function AdminPanel() {
         var o = React.useState({data: null, loading: true, error: null});
         var overview = o[0];
@@ -1832,6 +2240,13 @@
             });
         }, []);
 
+        // A search started from Mattermost's own search box lands here.
+        React.useEffect(function () {
+            return SearchIntent.subscribe(function () {
+                setTab('search');
+            });
+        }, []);
+
         function tabButton(id, label) {
             var active = tab === id;
             return e('button', {
@@ -1863,12 +2278,17 @@
                     display: 'flex',
                     borderBottom: '1px solid rgba(var(--center-channel-color-rgb), 0.12)',
                 },
-            }, [tabButton('tasks', 'Tasks'), tabButton('meetings', 'Meeting Intelligence'), tabButton('support', 'Support')].concat(isAdmin ? [tabButton('admin', 'Admin')] : [])),
+            }, [tabButton('tasks', 'Tasks'), tabButton('meetings', 'Meeting Intelligence'), tabButton('support', 'Support'), tabButton('search', 'Search')].concat(isAdmin ? [tabButton('admin', 'Admin')] : [])),
 
             e('div', {key: 'panel', style: {flex: 1, minHeight: 0}},
                 tab === 'tasks' ? e(TasksPanel) :
                     (tab === 'meetings' ? e(MeetingPanel) :
-                        (tab === 'support' ? e(SupportPanel) : e(AdminPanel)))),
+                        (tab === 'support' ? e(SupportPanel) :
+                            (tab === 'search' ? e(SearchPanel, {
+                                onOpenTasks: function () {
+                                    setTab('tasks');
+                                },
+                            }) : e(AdminPanel))))),
         ]);
     }
 
@@ -2202,6 +2622,45 @@
                 'Honco Workspace',
                 'Honco Workspace',
             );
+        }
+
+        // A "Honco" option in Mattermost's own search box, beside Messages
+        // and Files.
+        //
+        // Mattermost renders only messages and files in its search results
+        // panel -- a plugin cannot add rows there -- so choosing Honco and
+        // pressing Enter opens the Honco panel on its Search tab with the
+        // same terms. The user searches from one place; Messages and Files
+        // continue to work exactly as before, unmodified.
+        if (typeof registry.registerSearchComponents === 'function') {
+            try {
+                registry.registerSearchComponents({
+                    buttonComponent: function () {
+                        return e('span', {}, 'Honco');
+                    },
+                    suggestionsComponent: function () {
+                        return e('div', {
+                            style: {
+                                padding: '12px 20px',
+                                fontSize: 12,
+                                color: 'rgba(var(--center-channel-color-rgb), 0.64)',
+                            },
+                        }, 'Search Honco tasks, meetings, recordings, summaries and support requests.');
+                    },
+                    hintsComponent: function () {
+                        return e('div', {
+                            style: {
+                                padding: '8px 20px',
+                                fontSize: 12,
+                                color: 'rgba(var(--center-channel-color-rgb), 0.56)',
+                            },
+                        }, 'Press Enter to search Honco. Only what you already have access to is searched.');
+                    },
+                    action: function (terms) {
+                        SearchIntent.open(terms || '');
+                    },
+                });
+            } catch (err) { /* the Search tab still works without the pill */ }
         }
     };
 
