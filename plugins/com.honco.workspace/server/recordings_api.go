@@ -14,10 +14,61 @@ import (
 	"github.com/mattermost/mattermost/server/public/model"
 )
 
-// MaxRecordingBytes caps a single upload. Jibri sends the whole media file
-// in one multipart request, so without a ceiling one call could fill the
-// disk. 2 GiB is generous for a long meeting and still bounded.
+// MaxRecordingBytes is the absolute ceiling on a single recording upload,
+// whatever an administrator configures. Jibri sends the whole media file in
+// one multipart request, so without any ceiling one call could fill the
+// disk -- or, more immediately, the memory: the plugin API's File.Upload
+// reads the whole file into a byte slice and then copies it across the
+// plugin RPC boundary, so every accepted megabyte is resident RAM, roughly
+// twice over. Nothing in Mattermost's own FileSettings.MaxFileSize applies
+// to that path; it is enforced only on the browser upload endpoint. The
+// operative limit is therefore recordingLimit(), below; this constant only
+// stops a misconfiguration from asking for more than the process can hold.
 const MaxRecordingBytes = 2 << 30
+
+// errRecordingTooLarge is returned by the streaming reader the moment more
+// than the configured ceiling has arrived -- before the rest of the file is
+// buffered, not after.
+var errRecordingTooLarge = errors.New("recording exceeds the configured size limit")
+
+// recordingLimit is the size a recording may be, in bytes.
+//
+// It defaults to Mattermost's own FileSettings.MaxFileSize, so a recording
+// is held to exactly the limit an attachment is -- the plugin does not get
+// to quietly exceed the server's configured maximum. An administrator who
+// needs longer recordings raises MaxRecordingMB in the plugin settings,
+// knowingly: the setting's help text says what it costs.
+func (p *Plugin) recordingLimit() int64 {
+	var limit int64
+	if mb := p.config().MaxRecordingMB; mb > 0 {
+		limit = int64(mb) << 20
+	} else if cfg := p.API.GetConfig(); cfg != nil && cfg.FileSettings.MaxFileSize != nil {
+		limit = *cfg.FileSettings.MaxFileSize
+	}
+	if limit <= 0 || limit > MaxRecordingBytes {
+		limit = MaxRecordingBytes
+	}
+	return limit
+}
+
+// ceilingReader passes bytes through until one more than `limit` has been
+// read, then fails. Reading one byte past the limit -- rather than stopping
+// at it -- is what distinguishes "exactly at the limit" (allowed) from
+// "over it" (refused).
+type ceilingReader struct {
+	r     io.Reader
+	limit int64
+	read  int64
+}
+
+func (c *ceilingReader) Read(b []byte) (int, error) {
+	n, err := c.r.Read(b)
+	c.read += int64(n)
+	if c.read > c.limit {
+		return n, errRecordingTooLarge
+	}
+	return n, err
+}
 
 // configuration is the plugin's settings, as edited in the System Console.
 //
@@ -46,6 +97,11 @@ type configuration struct {
 	// system admin. Unset means nobody is an agent, which fails closed.
 	SupportTeamName    string
 	SupportChannelName string
+
+	// Recording size ceiling in MB. Zero means "the same as Mattermost's
+	// FileSettings.MaxFileSize". See recordingLimit for why raising it is
+	// a decision and not a default.
+	MaxRecordingMB int
 }
 
 // summarizerTimeout keeps the configured value inside a sane band. A zero
@@ -158,6 +214,13 @@ func (p *Plugin) handleRegisterMeeting(w http.ResponseWriter, r *http.Request) {
 		p.writeErr(w, http.StatusInternalServerError, "could not register meeting", err)
 		return
 	}
+	// A room registered twice -- a retry, say -- hits ON CONFLICT and keeps
+	// its existing id and card. Carry on with THAT row, not the fresh
+	// struct built above, or the card logic below sees no post id and
+	// posts a second card for the same meeting.
+	if existing, err := p.store.GetMeetingByRoom(m.RoomName); err == nil && existing != nil {
+		m = existing
+	}
 	p.client.Log.Info("honco: meeting registered", "room", m.RoomName, "channel_id", m.ChannelID)
 
 	// The card is the meeting's presence in the channel. Created here so
@@ -188,7 +251,11 @@ func (p *Plugin) handleRecordingComplete(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, MaxRecordingBytes)
+	// The request as a whole is bounded by the recording ceiling plus room
+	// for the small metadata fields. The per-file ceiling is applied again
+	// on the file part itself, where it can be reported properly.
+	limit := p.recordingLimit()
+	r.Body = http.MaxBytesReader(w, r.Body, limit+(1<<20))
 	mr, err := r.MultipartReader()
 	if err != nil {
 		p.writeErr(w, http.StatusBadRequest, "expected a multipart request", err)
@@ -224,7 +291,31 @@ func (p *Plugin) handleRecordingComplete(w http.ResponseWriter, r *http.Request)
 				p.writeErr(w, http.StatusBadRequest, "file part arrived before a known room_name", nil)
 				return
 			}
-			rec, err = p.storeRecording(part, meeting, roomName, duration)
+			rec, err = p.storeRecording(part, meeting, roomName, duration, limit)
+			if errors.Is(err, errRecordingTooLarge) {
+				// Too large is not a server fault and must not be a
+				// silent loss either: record it as a failed recording
+				// with a reason the channel can read, then refuse.
+				_ = part.Close()
+				failed := &Recording{
+					ID:           model.NewId(),
+					MeetingID:    meeting.ID,
+					RoomName:     roomName,
+					ChannelID:    meeting.ChannelID,
+					Status:       RecordingFailed,
+					DurationSecs: duration,
+					ErrorMessage: fmt.Sprintf("Recording exceeded the %s limit", humanSize(limit)),
+					CreatedAt:    nowMillis(),
+				}
+				if storeErr := p.store.CreateRecording(failed); storeErr == nil {
+					p.postRecordingMessage(meeting, failed)
+				}
+				p.client.Log.Warn("honco: recording refused, over size limit",
+					"room", roomName, "limit_bytes", limit)
+				writeJSON(w, http.StatusRequestEntityTooLarge,
+					errorBody{Error: failed.ErrorMessage})
+				return
+			}
 			if err != nil {
 				p.writeErr(w, http.StatusInternalServerError, "could not store recording", err)
 				return
@@ -308,14 +399,22 @@ func (p *Plugin) handleRecordingComplete(w http.ResponseWriter, r *http.Request)
 // service means the recording inherits Mattermost's existing access
 // control: only channel members can fetch it, enforced by the server, not
 // by this plugin.
-func (p *Plugin) storeRecording(part *multipart.Part, m *Meeting, room string, duration int64) (*Recording, error) {
+func (p *Plugin) storeRecording(part *multipart.Part, m *Meeting, room string, duration int64, limit int64) (*Recording, error) {
 	name := sanitiseFileName(part.FileName())
 	if name == "" {
 		name = room + ".mp4"
 	}
 
-	info, err := p.client.File.Upload(part, name, m.ChannelID)
+	// File.Upload reads its reader to the end before anything else
+	// happens, so the ceiling has to be inside the reader: the moment one
+	// byte too many arrives, the read fails and no more is buffered.
+	info, err := p.client.File.Upload(&ceilingReader{r: part, limit: limit}, name, m.ChannelID)
 	if err != nil {
+		if errors.Is(err, errRecordingTooLarge) || strings.Contains(err.Error(), errRecordingTooLarge.Error()) {
+			// The error may come back wrapped, or flattened to text by
+			// the plugin API; either way it is the same refusal.
+			return nil, errRecordingTooLarge
+		}
 		return nil, err
 	}
 

@@ -1542,8 +1542,25 @@
             },
         }, [
             e('span', {key: 'k', style: {opacity: 0.8}}, props.label),
-            e('span', {key: 'v', style: {fontWeight: 600, textAlign: 'right'}}, props.value),
+            e('span', {key: 'v', style: {
+                fontWeight: 600, textAlign: 'right',
+                color: props.warn ? 'var(--error-text)' : undefined,
+            }}, props.value),
         ]);
+    }
+
+    function humanBytes(n) {
+        n = Number(n) || 0;
+        if (n >= 1073741824) {
+            return (n / 1073741824).toFixed(1) + ' GB';
+        }
+        if (n >= 1048576) {
+            return (n / 1048576).toFixed(1) + ' MB';
+        }
+        if (n >= 1024) {
+            return (n / 1024).toFixed(1) + ' KB';
+        }
+        return n + ' B';
     }
 
     // Booleans read better as words than as true/false, and "enabled" vs
@@ -2026,6 +2043,7 @@
         var usage = d.usage || {};
         var sec = d.security || {};
         var plug = d.plugin || {};
+        var files = d.files || {};
         var failures = d.failures || [];
 
         return e('div', {style: {display: 'flex', flexDirection: 'column', height: '100%'}}, [
@@ -2096,6 +2114,37 @@
                     e(KeyValue, {key: 's', label: 'Meeting summaries', value: usage.summaries}),
                     e(KeyValue, {key: 'so', label: 'Support requests (open)', value: usage.support_open}),
                     e(KeyValue, {key: 'st', label: 'Support requests (total)', value: usage.support_total}),
+                ]),
+
+                // Files: counts only. No path, bucket or directory is ever
+                // sent to the browser, and nothing on this panel deletes.
+                e(AdminSection, {key: 'files', title: 'Files'}, [
+                    e(KeyValue, {key: 'sf', label: 'Stored files', value: files.stored_files}),
+                    e(KeyValue, {key: 'sb', label: 'Stored size', value: humanBytes(files.stored_bytes)}),
+                    e(KeyValue, {key: 'ap', label: 'Attached to a post', value: files.attached_to_post}),
+                    e(KeyValue, {key: 'rc', label: 'Meeting recordings', value: files.recordings +
+                        (files.recording_bytes ? ' · ' + humanBytes(files.recording_bytes) : '')}),
+                    e(KeyValue, {key: 'lg', label: 'Largest file', value: humanBytes(files.largest_file_bytes)}),
+                    e(KeyValue, {key: 'po', label: 'Possible orphans', value: files.possible_orphans +
+                        (files.orphan_bytes ? ' · ' + humanBytes(files.orphan_bytes) : ''),
+                        warn: files.possible_orphans > 0}),
+                    e(KeyValue, {key: 'pd', label: 'Post deleted, file kept', value: files.post_deleted_file_kept,
+                        warn: files.post_deleted_file_kept > 0}),
+                    e(KeyValue, {key: 'rm', label: 'Recordings missing their file', value: files.recordings_missing_file,
+                        warn: files.recordings_missing_file > 0}),
+                    e(KeyValue, {key: 'sd', label: 'Soft-deleted rows', value: files.soft_deleted}),
+                    e(KeyValue, {key: 'mf', label: 'Attachment limit', value: humanBytes(files.max_file_bytes)}),
+                    e(KeyValue, {key: 'mr', label: 'Recording limit', value: humanBytes(files.max_recording_bytes)}),
+                    e(Flag, {key: 'pl', label: 'Public file links', value: !files.public_links_enabled,
+                        words: ['Disabled', 'ENABLED']}),
+                    e('div', {
+                        key: 'note',
+                        style: {
+                            padding: '6px 16px 2px',
+                            fontSize: 11,
+                            color: 'rgba(var(--center-channel-color-rgb), 0.56)',
+                        },
+                    }, 'Diagnostic only. Nothing here is deleted automatically; "possible orphans" includes files uploaded but not yet attached.'),
                 ]),
 
                 e(AdminSection, {key: 'plugin', title: 'Honco plugin'}, [
@@ -2341,6 +2390,10 @@
         }, name.charAt(0).toUpperCase());
     }
 
+    // file id -> true when Mattermost said the file is gone. Session-scoped
+    // memo so a channel with many cards asks about each recording once.
+    var RecordingFileCheck = {};
+
     function MeetingCard(props) {
         var post = props.post || {};
         var p = (post.props && post.props.honco_meeting) || {};
@@ -2354,6 +2407,50 @@
         React.useEffect(function () {
             setCard(p);
         }, [post.update_at]);
+
+        // Is the recording's file still there? The server rebuilds a card
+        // only when the meeting changes state, so an ended meeting's card
+        // would keep offering "View Recording" forever after the file was
+        // removed. Ask Mattermost, whose answer is authorized and current:
+        // a member gets 200, a deleted file gets 404, and a non-member is
+        // refused -- nothing here decides anything itself. Remembered per
+        // file for the session so a channel full of cards asks once each.
+        var g = React.useState(null);
+        var gone = g[0];
+        var setGone = g[1];
+        React.useEffect(function () {
+            var fid = card.recording_file_id;
+            if (card.recording_status !== 'ready' || !fid) {
+                setGone(null);
+                return;
+            }
+            if (Object.prototype.hasOwnProperty.call(RecordingFileCheck, fid)) {
+                setGone(RecordingFileCheck[fid]);
+                return;
+            }
+            var cancelled = false;
+            fetch('/api/v4/files/' + encodeURIComponent(fid) + '/info',
+                {credentials: 'same-origin', cache: 'no-store'}).then(function (res) {
+                // 404 is "gone". Anything else -- including a transient
+                // error -- is treated as present: a card must not claim a
+                // recording is missing because a request timed out.
+                var missing = res.status === 404;
+                RecordingFileCheck[fid] = missing;
+                if (!cancelled) {
+                    setGone(missing);
+                }
+            }).catch(function () {
+                if (!cancelled) {
+                    setGone(false);
+                }
+            });
+            return function () {
+                cancelled = true;
+            };
+        }, [card.recording_status, card.recording_file_id]);
+        if (gone === true && card.recording_status === 'ready') {
+            card = Object.assign({}, card, {recording_status: 'unavailable', recording_file_id: ''});
+        }
 
         var st = statusOf(card.status);
         var joinable = card.status !== 'ended' && card.join_url;
@@ -2429,6 +2526,13 @@
                 key: 'recfail',
                 style: {fontSize: 12, color: 'var(--error-text)', marginRight: 8},
             }, 'Recording failed'));
+        } else if (card.recording_status === 'unavailable') {
+            // The recording existed but its file is gone. Said plainly,
+            // rather than offering a link the server would refuse.
+            actions.push(e('span', {
+                key: 'recgone',
+                style: {fontSize: 12, color: 'rgba(var(--center-channel-color-rgb), 0.64)', marginRight: 8},
+            }, 'Recording unavailable'));
         }
         if (card.has_summary) {
             actions.push(e('button', {

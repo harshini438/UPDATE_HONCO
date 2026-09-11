@@ -33,9 +33,14 @@ type Meeting struct {
 
 // Recording statuses. `ready` means a media file arrived and was stored;
 // `failed` means Jibri reported the session produced nothing usable.
+//
+// `unavailable` is never written to the database. It is what the meeting
+// card shows when a `ready` row's file has since been removed -- the row
+// is history, the file is gone, and the card must not offer a dead link.
 const (
-	RecordingReady  = "ready"
-	RecordingFailed = "failed"
+	RecordingReady       = "ready"
+	RecordingFailed      = "failed"
+	RecordingUnavailable = "unavailable"
 )
 
 type Recording struct {

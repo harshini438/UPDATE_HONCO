@@ -121,6 +121,14 @@
                 "help_text": "Members of this channel are the remote-support agents. Add or remove an agent by adding or removing them from the channel. This deliberately does NOT mean every system admin: administering the server and doing desk-side support are different jobs.",
                 "placeholder": "honco-support",
                 "default": null
+            },
+            {
+                "key": "MaxRecordingMB",
+                "display_name": "Maximum recording size (MB)",
+                "type": "number",
+                "help_text": "Largest meeting recording Jibri may deliver, in megabytes. 0 means the same limit as Mattermost's own Maximum File Size (File Storage settings). Raise this knowingly: the plugin file API holds each recording in memory while it is stored, roughly twice its size, so every megabyte allowed here is RAM the server must have free. A 1080p recording is on the order of 1 GB per hour. Recordings over the limit are refused and reported in the channel as failed, never silently dropped. Hard ceiling 2048.",
+                "placeholder": "0",
+                "default": 0
             }
         ]
     }

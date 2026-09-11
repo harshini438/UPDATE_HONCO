@@ -296,10 +296,25 @@ func (p *Plugin) handleAdminOverview(w http.ResponseWriter, r *http.Request) {
 		p.writeErr(w, http.StatusInternalServerError, "could not read migration state", err)
 		return
 	}
+	files, err := p.store.AdminFiles()
+	if err != nil {
+		p.writeErr(w, http.StatusInternalServerError, "could not read file statistics", err)
+		return
+	}
+	files.MaxRecordingBytes = p.recordingLimit()
+	if cfg := p.API.GetConfig(); cfg != nil {
+		if cfg.FileSettings.MaxFileSize != nil {
+			files.MaxFileBytes = *cfg.FileSettings.MaxFileSize
+		}
+		if cfg.FileSettings.EnablePublicLink != nil {
+			files.PublicLinks = *cfg.FileSettings.EnablePublicLink
+		}
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"usage":    usage,
 		"failures": failures,
+		"files":    files,
 		"security": p.adminSecurity(),
 		"plugin": adminPlugin{
 			ID:                  "com.honco.workspace",

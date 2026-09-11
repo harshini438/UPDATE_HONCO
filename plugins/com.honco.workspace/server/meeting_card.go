@@ -104,6 +104,17 @@ func (p *Plugin) buildMeetingProps(m *Meeting) *meetingProps {
 			if r.MeetingID == m.ID {
 				props.RecordingStatus = r.Status
 				props.RecordingFileID = r.FileID
+				// A recording row can outlive its file: the file was
+				// removed, or Mattermost soft-deleted it with the post.
+				// A card that still says "View Recording" would then be
+				// a dead link, forever. Ask Mattermost whether the file is
+				// still there and say "unavailable" if it is not.
+				if r.Status == RecordingReady && r.FileID != "" {
+					if info, ferr := p.client.File.GetInfo(r.FileID); ferr != nil || info == nil || info.DeleteAt != 0 {
+						props.RecordingStatus = RecordingUnavailable
+						props.RecordingFileID = ""
+					}
+				}
 				break
 			}
 		}
