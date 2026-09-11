@@ -102,6 +102,13 @@ type configuration struct {
 	// FileSettings.MaxFileSize". See recordingLimit for why raising it is
 	// a decision and not a default.
 	MaxRecordingMB int
+
+	// AI Assistant (ai.go). The URL is not a secret; the two tokens are
+	// and follow the same rules as the ones above: compared, never
+	// logged, never returned by any endpoint, never sent to a browser.
+	AIServiceURL     string
+	AIServiceToken   string
+	AICallbackSecret string
 }
 
 // summarizerTimeout keeps the configured value inside a sane band. A zero

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/mattermost/mattermost/server/public/pluginapi"
 	"net/http"
 	"sync"
 	"time"
@@ -336,6 +337,7 @@ func (p *Plugin) handleAdminOverview(w http.ResponseWriter, r *http.Request) {
 		"failures":      failures,
 		"files":         files,
 		"notifications": notifications,
+		"ai":            p.adminAI(),
 		"security":      p.adminSecurity(),
 		"plugin": adminPlugin{
 			ID:                  "com.honco.workspace",
@@ -393,4 +395,56 @@ func derefString(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// adminAI: is the assistant wired up, and is the service answering. The
+// health probe is the one outbound call the dashboard makes, and only on
+// an explicit open/refresh -- never on a timer. Booleans and counts only.
+func (p *Plugin) adminAI() map[string]any {
+	pc := p.config()
+	out := map[string]any{
+		"callback_configured": pc.AICallbackSecret != "",
+		"service_configured":  pc.AIServiceURL != "",
+		"service_reachable":   false,
+		"service_error":       "",
+		"sessions_stored":     0,
+		"sessions_live":       0,
+		"sessions_completed":  0,
+	}
+	if pc.AIServiceURL != "" {
+		if err := p.aiService().Health(); err != nil {
+			out["service_error"] = aiErrorKind(err)
+		} else {
+			out["service_reachable"] = true
+		}
+	}
+	// Bounded scan of stored sessions. The KV store lists keys in pages;
+	// two pages is plenty for a dashboard number and keeps this cheap.
+	stored, live, completed := 0, 0, 0
+	for page := 0; page < 2; page++ {
+		keys, err := p.client.KV.ListKeys(page, 200, pluginapi.WithPrefix("ai:session:"))
+		if err != nil || len(keys) == 0 {
+			break
+		}
+		for _, k := range keys {
+			var s AISession
+			if err := p.client.KV.Get(k, &s); err != nil || s.MeetingID == "" {
+				continue
+			}
+			stored++
+			switch s.Status {
+			case AIStatusLive, AIStatusConnecting:
+				live++
+			case AIStatusCompleted:
+				completed++
+			}
+		}
+		if len(keys) < 200 {
+			break
+		}
+	}
+	out["sessions_stored"] = stored
+	out["sessions_live"] = live
+	out["sessions_completed"] = completed
+	return out
 }

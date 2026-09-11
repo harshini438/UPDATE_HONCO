@@ -37,6 +37,29 @@
                 "secret": true
             },
             {
+                "key": "AIServiceURL",
+                "display_name": "AI service URL",
+                "type": "text",
+                "help_text": "Base URL of the Honco AI service (voice recognition, live transcript, suggestions, post-call summary), for example https://ai.honco.internal. Not a secret. Leave blank if the service only pushes events to Honco. See AI_INTEGRATION.md.",
+                "default": ""
+            },
+            {
+                "key": "AIServiceToken",
+                "display_name": "AI service token",
+                "type": "text",
+                "help_text": "Bearer token Honco presents to the AI service. Held server-side only; never sent to a browser and never logged.",
+                "secret": true,
+                "default": ""
+            },
+            {
+                "key": "AICallbackSecret",
+                "display_name": "AI callback secret",
+                "type": "text",
+                "help_text": "Shared secret the AI service sends as X-Honco-AI-Secret when it pushes transcript, suggestion and summary events to /plugins/com.honco.workspace/api/v1/ai/events. Unset means every push is rejected.",
+                "secret": true,
+                "default": ""
+            },
+            {
                 "key": "SummarizerCommand",
                 "display_name": "Summarizer command (optional)",
                 "type": "text",

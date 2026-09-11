@@ -40,6 +40,9 @@ type Plugin struct {
 	// a live call early.
 	emptyRooms map[string]int64
 	emptyMu    sync.Mutex
+
+	// Per-meeting locks for AI session updates (ai.go).
+	ai aiSessions
 }
 
 func nowMillis() int64 { return time.Now().UnixMilli() }

@@ -334,6 +334,16 @@ func (p *Plugin) pollOneMeeting(muc *mucClient, m *Meeting) {
 
 	p.announceLifecycle(m, prevStatus, joined, left)
 	p.refreshMeetingCard(m)
+
+	// The AI assistant follows the meeting: attach when people are in the
+	// call, detach when it ends. Both are best effort and never block
+	// the poller.
+	switch {
+	case m.Status == MeetingActive && (prevStatus != MeetingActive || len(joined) > 0):
+		p.aiMeetingStarted(m)
+	case m.Status == MeetingEnded && prevStatus != MeetingEnded:
+		p.aiMeetingEnded(m)
+	}
 }
 
 // --- empty-room bookkeeping ------------------------------------------------

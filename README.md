@@ -18,8 +18,9 @@ rebuild.
 | `chat/meetsvc.py` | The `/meet` slash-command service: instant rooms, scheduled meetings, reminders. |
 | `chat/DEBRAND.md` | What was removed from upstream and why, plus the traps. **Read this before touching the fork.** |
 | `meet/` | The Jitsi deployment: branding, recording (Jibri), generated virtual backgrounds, and the compose wrapper. |
-| `transcribe/` | Recording → transcript → meeting notes. Pluggable speech-to-text. |
+| `transcribe/` | Recording → transcript → meeting notes. Pluggable speech-to-text. Batch, post-call; unrelated to the AI Assistant. |
 | `summarize/` | Runs on the box where the Claude CLI is authenticated; produces the notes. |
+| `AI_INTEGRATION.md` | The AI Assistant contract: how Honco Chat connects to the **external** AI service that owns voice, live transcript, suggestions and summaries. Honco displays its output; it implements none of it. |
 | `dns/` | The honco.in → Cloudflare migration pack and its verifier. |
 
 ## Where things run

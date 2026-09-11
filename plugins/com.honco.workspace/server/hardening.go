@@ -122,6 +122,10 @@ var (
 	limitMutations = newRateLimiter(60, 30)
 	limitReads     = newRateLimiter(240, 60)
 	limitService   = newRateLimiter(60, 20)
+	// The AI event stream: 300/min with a burst of 60. Real speech is a
+	// few utterances a minute per speaker; this leaves room for a service
+	// that batches badly without letting a broken one flood the KV store.
+	limitAIPush = newRateLimiter(300, 60)
 )
 
 // clientKey identifies the caller for limiting: the user for an
@@ -167,9 +171,16 @@ func isMutation(r *http.Request) bool {
 	return false
 }
 
-// isServiceRoute picks out the two shared-secret routes.
+// isServiceRoute picks out the shared-secret routes.
 func isServiceRoute(path string) bool {
 	return strings.HasSuffix(path, "/meetings/register") || strings.HasSuffix(path, "/recordings/complete")
+}
+
+// isAIPushRoute is the AI service's event stream: chattier than the other
+// service routes (an utterance every few seconds, batched or not), so it
+// has its own budget rather than sharing the one sized for Jibri.
+func isAIPushRoute(path string) bool {
+	return strings.HasSuffix(path, "/ai/events")
 }
 
 // limitByRoute chooses the limiter for a request.
@@ -177,6 +188,8 @@ func (p *Plugin) limitByRoute(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var l *rateLimiter
 		switch {
+		case isAIPushRoute(r.URL.Path):
+			l = limitAIPush
 		case isServiceRoute(r.URL.Path):
 			l = limitService
 		case isMutation(r):

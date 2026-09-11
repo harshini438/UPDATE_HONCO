@@ -185,6 +185,8 @@ wsl.exe -d Ubuntu-22.04 -u root sh -c 'echo ":WSLInterop:M::MZ::/init:PF" > /pro
 | Meet service secret | `~/.honco-meet-service-secret`; `run/meetsvc.env`; plugin setting `meetservicesecret` | same pattern; restart meetsvc |
 | SMTP password | `config.json` only | System Console / `mmctl config set` |
 | Summariser SSH key | on disk, path in plugin settings; never read by the plugin | — |
+| AI callback secret | `~/.honco-ai-callback-secret` (0600); plugin setting `aicallbacksecret`; also held by the AI service | generate `openssl rand -hex 32`, set both sides, no restart needed |
+| AI service token | plugin setting `aiservicetoken` only (the browser never sees it) | rotate on the service, then `mmctl config patch` |
 
 The Jibri hook (`meet/jibri-finalize.sh`) is version-controlled and carries **no
 secret**; it reads the secret from the mounted file at run time. The previous hook
@@ -218,6 +220,36 @@ recommended for production, not made here.
 **TLS** is terminated outside Mattermost (`ConnectionSecurity=""`): by the Cloudflare
 tunnel in production, by nothing on the LAN. Do not expose `:8065` beyond the LAN
 without a TLS terminator in front.
+
+### AI Assistant — an external service
+
+The assistant displays what a **separate, teammate-owned** AI service produces
+(voice recognition, live transcript, suggestions, post-call summary). Honco runs
+none of that. Three settings, none of which have a default:
+
+```bash
+MMCTL=~/honco-chat/build/mmctl
+umask 077; openssl rand -hex 32 > ~/.honco-ai-callback-secret   # give this to the service owner
+P=$(mktemp)
+printf '{"PluginSettings":{"Plugins":{"com.honco.workspace":{"aiserviceurl":"https://ai.example.internal","aiservicetoken":"<token from the service>","aicallbacksecret":"%s"}}}}' \
+  "$(cat ~/.honco-ai-callback-secret)" > "$P"
+$MMCTL --local config patch "$P"; rm -f "$P"
+```
+
+`mmctl config set` cannot create a plugin key that does not exist yet — use
+`config patch` the first time, `set` afterwards.
+
+- Unset `aiserviceurl` ⇒ Honco makes no outbound AI calls and the panel says
+  "not configured"; it never pretends to be connected.
+- Unset `aicallbacksecret` ⇒ every push from the service is rejected (fails
+  closed).
+- The service pushes to `{SiteURL}/plugins/com.honco.workspace/api/v1/ai/events`
+  with `X-Honco-AI-Secret`. Honco also sends that URL to the service as
+  `callback_url` when a meeting starts.
+- Honco Administration (the plugin's Admin tab) shows whether each is set and
+  whether the service answered its health probe — never a value.
+
+Full contract, bounds and security notes: `AI_INTEGRATION.md`.
 
 ## 11. Cloudflare, Jitsi and RustDesk boundaries
 
