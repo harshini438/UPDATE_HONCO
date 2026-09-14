@@ -111,6 +111,121 @@
         return full ? full + ' (@' + u.username + ')' : '@' + u.username;
     }
 
+    // --- User avatar -------------------------------------------------------
+
+    // The one profile picture Mattermost already keeps for a user, at the
+    // URL its own UI uses: /api/v4/users/{id}/image?_={last_picture_update}.
+    // The plugin stores and copies nothing. When someone changes or removes
+    // their photo, Mattermost bumps last_picture_update, broadcasts
+    // user_updated, the webapp store updates, and this re-renders with the
+    // new URL -- so every Honco panel changes at the same moment as the
+    // rest of the app. A user with no photo gets Mattermost's default.
+    //
+    // The image URL is ALWAYS keyed with the timestamp. The server marks a
+    // served image cacheable for a day whatever the URL says, so a URL
+    // without the key would be the one thing that could pin a stale photo
+    // in a browser. Until the timestamp is known nothing is rendered.
+    //
+    // Where the timestamp comes from, in order: the webapp's own store
+    // (kept current by Mattermost's user_updated event, so a change shows
+    // here at the same moment as everywhere else), the caller (lists that
+    // already fetched the profile), or one lookup through Mattermost's
+    // users API for a person the store has not loaded.
+    var pictureUpdates = {};   // userId -> last_picture_update, from that lookup
+    var pictureLookups = {};   // userId -> true while a lookup is in flight
+    var pictureListeners = [];
+
+    function pictureUpdateOf(userId, fallback) {
+        try {
+            var st = window.store ? window.store.getState() : null;
+            var u = st && st.entities.users.profiles[userId];
+            if (u && typeof u.last_picture_update === 'number') {
+                return u.last_picture_update;
+            }
+        } catch (err) {
+            // fall through
+        }
+        if (typeof fallback === 'number') {
+            return fallback;
+        }
+        return typeof pictureUpdates[userId] === 'number' ? pictureUpdates[userId] : null;
+    }
+
+    function lookupPictureUpdate(userId) {
+        if (pictureLookups[userId] || typeof pictureUpdates[userId] === 'number') {
+            return;
+        }
+        pictureLookups[userId] = true;
+        fetch('/api/v4/users/ids', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+            body: JSON.stringify([userId]),
+        }).then(function (res) {
+            return res.ok ? res.json() : [];
+        }).then(function (users) {
+            (users || []).forEach(function (u) {
+                if (u && u.id) {
+                    pictureUpdates[u.id] = typeof u.last_picture_update === 'number' ? u.last_picture_update : 0;
+                }
+            });
+        }).catch(function () {
+            // leave it unknown; the avatar simply does not render
+        }).then(function () {
+            delete pictureLookups[userId];
+            pictureListeners.slice().forEach(function (fn) {
+                fn();
+            });
+        });
+    }
+
+    function avatarURL(userId, lpu) {
+        return '/api/v4/users/' + encodeURIComponent(userId) + '/image?_=' + lpu;
+    }
+
+    function UserAvatar(props) {
+        var s = React.useState(pictureUpdateOf(props.userId, props.lastPictureUpdate));
+        var lpu = s[0];
+        var setLpu = s[1];
+        React.useEffect(function () {
+            var refresh = function () {
+                var v = pictureUpdateOf(props.userId, props.lastPictureUpdate);
+                setLpu(function (prev) {
+                    return prev === v ? prev : v;
+                });
+            };
+            refresh();
+            if (props.userId && pictureUpdateOf(props.userId, props.lastPictureUpdate) === null) {
+                lookupPictureUpdate(props.userId);
+            }
+            pictureListeners.push(refresh);
+            var unsub = (window.store && window.store.subscribe) ? window.store.subscribe(refresh) : null;
+            return function () {
+                pictureListeners = pictureListeners.filter(function (fn) {
+                    return fn !== refresh;
+                });
+                if (unsub) {
+                    unsub();
+                }
+            };
+        }, [props.userId, props.lastPictureUpdate]);
+        if (!props.userId || lpu === null) {
+            return null;
+        }
+        var size = props.size || 20;
+        return e('img', {
+            className: 'hw-avatar' + (props.className ? ' ' + props.className : ''),
+            src: avatarURL(props.userId, lpu),
+            alt: props.alt || '',
+            width: size,
+            height: size,
+            loading: 'lazy',
+            'data-user-id': props.userId,
+            'data-picture-update': lpu,
+            style: {width: size, height: size},
+        });
+    }
+
     // --- shared styles -----------------------------------------------------
 
     // One small stylesheet, injected once. Inline styles cannot express
@@ -179,6 +294,7 @@
         '.hw-badge-warn{background:rgba(var(--away-indicator-rgb),.16);color:rgba(var(--center-channel-color-rgb),.8)}',
         '.hw-badge-err{background:rgba(var(--error-text-color-rgb),.1);color:var(--error-text)}',
         '.hw-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0}',
+        '.hw-avatar{display:inline-block;border-radius:50%;object-fit:cover;flex:none;vertical-align:middle;background:rgba(var(--center-channel-color-rgb),.08)}',
         '.hw-status{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--center-channel-color)}',
         '.hw-empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:4px;padding:36px 24px 28px;color:rgba(var(--center-channel-color-rgb),.64);font-size:13px;line-height:1.5}',
         '.hw-empty .icon{font-size:32px;line-height:1;margin-bottom:6px;color:rgba(var(--center-channel-color-rgb),.4)}',
@@ -553,8 +669,10 @@
             t.description ? e('div', {key: 'desc', className: 'hw-row-desc'}, t.description) : null,
 
             e('div', {key: 'meta', className: 'hw-row-meta'}, [
-                e('span', {key: 'as'}, [
-                    e(Icon, {key: 'i', name: 'account-outline'}),
+                e('span', {key: 'as', style: {display: 'inline-flex', alignItems: 'center', gap: 4}}, [
+                    t.assignee_id
+                        ? e(UserAvatar, {key: 'av', userId: t.assignee_id, lastPictureUpdate: assignee ? assignee.last_picture_update : undefined, size: 18})
+                        : e(Icon, {key: 'i', name: 'account-outline'}),
                     ' ' + (t.assignee_id
                         ? (assignee ? memberLabel(assignee) : 'Assigned')
                         : 'Unassigned'),
@@ -2547,9 +2665,13 @@
                             className: 'hw-row',
                         }, [
                             e(StatusDot, {key: 'st', status: r.status}),
-                            e('div', {key: 'who', className: 'hw-row-meta', style: {marginTop: 4, fontSize: 12}},
-                                'Requested by ' + (r.requester_id === ctx.userId ? 'you' : 'a colleague') +
-                                (r.agent_id ? ' · agent assigned' : '')),
+                            e('div', {key: 'who', className: 'hw-row-meta', style: {marginTop: 4, fontSize: 12, gap: 6}}, [
+                                e(UserAvatar, {key: 'rav', userId: r.requester_id, size: 18}),
+                                e('span', {key: 'rt'}, 'Requested by ' + (r.requester_id === ctx.userId ? 'you' : 'a colleague')),
+                                r.agent_id ? e('span', {key: 'sep'}, '·') : null,
+                                r.agent_id ? e(UserAvatar, {key: 'aav', userId: r.agent_id, size: 18}) : null,
+                                r.agent_id ? e('span', {key: 'at'}, 'agent assigned') : null,
+                            ]),
                             r.issue ? e('div', {
                                 key: 'issue',
                                 className: 'hw-row-desc',
@@ -2574,7 +2696,10 @@
                 e(Icon, {key: 'i', name: 'monitor'}),
                 e('span', {key: 't'}, 'Remote Support Request'),
             ]),
-            e('div', {key: 'by', className: 'hw-card-sub'}, 'Requested by ' + (c.requester_name || 'someone')),
+            e('div', {key: 'by', className: 'hw-card-sub', style: {display: 'flex', alignItems: 'center', gap: 6}}, [
+                e(UserAvatar, {key: 'av', userId: c.requester_id, size: 18}),
+                e('span', {key: 't'}, 'Requested by ' + (c.requester_name || 'someone')),
+            ]),
             e(StatusDot, {key: 'st', status: c.status}),
             c.issue ? e('div', {
                 key: 'issue',
@@ -2584,7 +2709,7 @@
                 },
             }, c.issue) : null,
             c.agent_name ? e('div', {key: 'agent', className: 'hw-card-line'}, [
-                e(Icon, {key: 'i', name: 'account-outline'}),
+                c.agent_id ? e(UserAvatar, {key: 'i', userId: c.agent_id, size: 18}) : e(Icon, {key: 'i', name: 'account-outline'}),
                 e('span', {key: 't'}, 'Agent: ' + c.agent_name),
             ]) : null,
         ]);
@@ -3584,7 +3709,10 @@
                 e('span', {key: 't'}, card.topic || 'Meeting'),
             ]),
 
-            e('div', {key: 'by', className: 'hw-card-sub'}, 'Started by ' + (card.creator_name || 'someone')),
+            e('div', {key: 'by', className: 'hw-card-sub', style: {display: 'flex', alignItems: 'center', gap: 6}}, [
+                e(UserAvatar, {key: 'av', userId: card.creator_id, size: 18}),
+                e('span', {key: 't'}, 'Started by ' + (card.creator_name || 'someone')),
+            ]),
 
             e('div', {key: 'status', className: 'hw-status', style: {marginBottom: 10}}, [
                 e(Dot, {key: 'dot', color: st.dot}),

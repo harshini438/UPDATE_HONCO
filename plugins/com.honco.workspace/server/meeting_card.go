@@ -36,6 +36,7 @@ type meetingProps struct {
 	MeetingID    string   `json:"meeting_id"`
 	Topic        string   `json:"topic"`
 	Status       string   `json:"status"`
+	CreatorID    string   `json:"creator_id"`
 	CreatorName  string   `json:"creator_name"`
 	JoinURL      string   `json:"join_url"`
 	Participants []string `json:"participants"`
@@ -74,6 +75,7 @@ func (p *Plugin) buildMeetingProps(m *Meeting) *meetingProps {
 		MeetingID:    m.ID,
 		Topic:        m.Topic,
 		Status:       m.Status,
+		CreatorID:    m.CreatorID,
 		CreatorName:  p.username(m.CreatorID),
 		JoinURL:      p.joinURL(m),
 		Count:        m.ParticipantCount,

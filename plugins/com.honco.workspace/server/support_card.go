@@ -31,9 +31,14 @@ const (
 )
 
 type supportProps struct {
-	RequestID     string `json:"request_id"`
-	Status        string `json:"status"`
+	RequestID string `json:"request_id"`
+	Status    string `json:"status"`
+	// User ids are here so the card can show the same profile picture the
+	// rest of Mattermost shows (it is looked up by id). They are not
+	// sensitive: every post already carries its author's user id.
+	RequesterID   string `json:"requester_id"`
 	RequesterName string `json:"requester_name"`
+	AgentID       string `json:"agent_id,omitempty"`
 	AgentName     string `json:"agent_name,omitempty"`
 	Issue         string `json:"issue"`
 	CreatedAt     int64  `json:"created_at"`
@@ -43,11 +48,13 @@ func (p *Plugin) buildSupportProps(req *SupportRequest) *supportProps {
 	props := &supportProps{
 		RequestID:     req.ID,
 		Status:        req.Status,
+		RequesterID:   req.RequesterID,
 		RequesterName: p.username(req.RequesterID),
 		Issue:         req.Issue,
 		CreatedAt:     req.CreatedAt,
 	}
 	if req.AgentID != "" {
+		props.AgentID = req.AgentID
 		props.AgentName = p.username(req.AgentID)
 	}
 	return props
