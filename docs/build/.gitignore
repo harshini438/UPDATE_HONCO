@@ -1,0 +1,6 @@
+node_modules/
+doc.html
+pass1.pdf
+*.png
+viewer.html
+package-lock.json
