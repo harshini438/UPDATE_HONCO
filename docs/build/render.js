@@ -6,11 +6,13 @@ const path = require('path');
 const fs = require('fs');
 const url = require('url');
 
-const HTML = path.resolve(__dirname, 'doc.html');
-const OUT = path.resolve(__dirname, '..', 'HONCO_CHAT_COMPLETE_DOCUMENTATION.pdf');
+const DOC = process.env.DOC || 'reference';
+const HTML = path.resolve(__dirname, DOC + '.html');
+const OUT = path.resolve(__dirname, '..', DOC === 'learning' ? 'HONCO_CHAT_PROJECT_LEARNING_GUIDE.pdf' : 'HONCO_CHAT_COMPLETE_DOCUMENTATION.pdf');
+const FOOT = DOC === 'learning' ? 'Honco Chat — Complete Project Learning &amp; Developer Guide' : 'Honco Chat — Complete System Documentation &amp; User Guide';
 const TMP = path.resolve(__dirname, 'pass1.pdf');
 const footer = `<div style="font:8pt 'Segoe UI',Arial,sans-serif;color:#666;width:100%;padding:0 17mm;display:flex;justify-content:space-between;">
-  <span>Honco Chat — Complete System Documentation &amp; User Guide</span><span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span></div>`;
+  <span>${FOOT}</span><span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span></div>`;
 const header = `<div style="font:8pt 'Segoe UI',Arial,sans-serif;color:#888;width:100%;padding:0 17mm;text-align:right;">v1.0 · 14 Sep 2026 · commit 126acc9</div>`;
 
 async function render(page, out) {

@@ -5,11 +5,23 @@ const path = require('path');
 const {marked} = require('marked');
 
 const DOCS = path.resolve(__dirname, '..');
-const parts = ['part1.md', 'part2.md', 'part3.md', 'part4.md'].map((f) => fs.readFileSync(path.join(DOCS, 'parts', f), 'utf8'));
+const DOC = process.env.DOC || 'reference';
+const CFG = DOC === 'learning'
+    ? {dir: 'parts-learning', files: ['lg1.md', 'lg2.md', 'lg3.md', 'lg4.md'], out: 'HONCO_CHAT_PROJECT_LEARNING_GUIDE', title: 'Honco Chat — Complete Project Learning & Developer Guide'}
+    : {dir: 'parts', files: ['part1.md', 'part2.md', 'part3.md', 'part4.md'], out: 'HONCO_CHAT_COMPLETE_DOCUMENTATION', title: 'Honco Chat — Complete System Documentation & User Guide'};
+const parts = CFG.files.map((f) => fs.readFileSync(path.join(DOCS, CFG.dir, f), 'utf8'));
 let md = parts.join('\n');
 
 // Screenshots: [anchor text that starts a line, image, caption]. Inserted immediately before the anchor.
-const shots = [
+const shots = DOC === 'learning' ? [
+    ['## Table of contents', '01-login.png', 'Figure 0 — The login page of the running Honco Chat (the vendor branding is replaced by the Honco wordmark).'],
+    ['# 11. Meeting Intelligence', '07-ai-assistant.png', 'Figure 6 — AI Assistant tab for an ended meeting with no session: the honest empty state, Reconnect, meeting selector, AI Meeting Summary block.'],
+    ['# 12. AI Assistant', '06b-summary-failed.png', 'Figure 7 — Meeting Intelligence today: the real generation attempt failed because the summarizer host is unreachable; Try again is offered.'],
+    ['# 14. Files', '08-support.png', 'Figure 8 — The Support tab as a requester (Request Support, own requests).'],
+    ['# 17. Admin dashboard', '09-search.png', 'Figure 9 — The Search tab with results grouped by category.'],
+    ['# 19. Database', '12-mobile-channel.png', 'Figure 10 — Phone width (390 px): the channel view with cards; the panel is reached from the channel menu.'],
+    ['# 20. API concept', '06c-summary-empty.png', 'Figure 11 — Meeting Intelligence "empty" result: no messages were posted during that meeting, so there is nothing to summarise.'],
+] : [
     ['## Table of contents', '02-workspace.png', 'Figure 0 — Honco Chat main workspace (Town Square) with a meeting card and a support card, 1440 px, light theme.'],
     ['### 5.1 Honco Workspace', '01-login.png', 'Figure 1 — Login page (Honco wordmark; the vendor branding is gone).'],
     ['### 5.3 Tasks tab', '03b-tasks-panel.png', 'Figure 2 — Honco Workspace panel, Tasks tab: filters, New task, rows with assignee avatar, status selector, Edit/Delete, paging.'],
@@ -31,7 +43,7 @@ for (const [anchor, img, caption] of shots) {
     const block = `\n<figure class="shot"><img src="images/${img}" alt="${caption.replace(/"/g, '&quot;')}"><figcaption>${caption}</figcaption></figure>\n`;
     md = md.slice(0, i) + block + md.slice(i);
 }
-fs.writeFileSync(path.join(DOCS, 'HONCO_CHAT_COMPLETE_DOCUMENTATION.md'), md);
+fs.writeFileSync(path.join(DOCS, CFG.out + '.md'), md);
 
 // ---- HTML for the PDF -------------------------------------------------------
 marked.setOptions({gfm: true, breaks: false});
@@ -46,9 +58,9 @@ const toc = '<nav class="toc"><h2>Table of contents</h2><ol>' + tocItems.map(([n
 body = body.replace(/<h2(?: id="[^"]*")?>Table of contents<\/h2>\s*<ol>[\s\S]*?<\/ol>/, toc);
 
 const css = fs.readFileSync(path.join(__dirname, 'doc.css'), 'utf8');
-const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Honco Chat — Complete System Documentation & User Guide</title>
+const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${CFG.title}</title>
 <style>${css}</style>
 
 </head><body><main>${body}</main></body></html>`;
-fs.writeFileSync(path.join(__dirname, 'doc.html'), html);
+fs.writeFileSync(path.join(__dirname, DOC + '.html'), html);
 console.log('markdown', md.length, 'chars; html', html.length, 'chars; toc entries', tocItems.length);

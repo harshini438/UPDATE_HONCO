@@ -4,7 +4,7 @@ const path = require('path'); const url = require('url'); const fs = require('fs
 (async () => {
     const b = await chromium.launch({executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true, args: ['--allow-file-access-from-files']});
     const p = await b.newPage({viewport: {width: 1000, height: 1400}});
-    const pdfData = fs.readFileSync(path.resolve(__dirname, '..', 'HONCO_CHAT_COMPLETE_DOCUMENTATION.pdf')).toString('base64');
+    const pdfData = fs.readFileSync(path.resolve(__dirname, '..', (process.env.DOC === 'learning' ? 'HONCO_CHAT_PROJECT_LEARNING_GUIDE.pdf' : 'HONCO_CHAT_COMPLETE_DOCUMENTATION.pdf'))).toString('base64');
     await p.goto(url.pathToFileURL(path.resolve(__dirname, 'viewer.html')).href);
     for (const pg of (process.argv[2] || '3,9,12,20,30').split(',').map(Number)) {
         await p.evaluate(async ([data, pg]) => {
