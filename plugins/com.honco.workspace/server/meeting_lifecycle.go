@@ -284,9 +284,17 @@ func (p *Plugin) pollOneMeeting(muc *mucClient, m *Meeting) {
 		// Somebody is in the room: the meeting is running.
 		if m.Status != MeetingActive {
 			m.Status = MeetingActive
-			if m.StartedAt == 0 {
-				m.StartedAt = now
-			}
+			changed = true
+		}
+		// "Started" means the first person was actually seen in the room,
+		// not that /meet ran. /meet registers a meeting as active before
+		// anyone joins, so this cannot hang off the status transition
+		// above: it never happened for those meetings, StartedAt stayed
+		// zero, and the empty-room branch below (which needs it) never
+		// fired -- a call everyone had left stayed "active" until the
+		// 30-minute never-joined fallback.
+		if m.StartedAt == 0 {
+			m.StartedAt = now
 			changed = true
 		}
 		p.clearEmpty(m.ID)
