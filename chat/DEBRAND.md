@@ -30,6 +30,7 @@ python3 branding/debrand-polish.py                 # product name in translation
 python3 branding/debrand-residual.py               # strings-check leftovers (see below)
 python3 branding/debrand-webapp.py                 # web client static shell (title, PWA name)
 python3 branding/debrand-ui.py                     # web client logo, edition badge, footer
+python3 branding/profile-photo.py                  # Profile Settings: the Profile Photo section (labels, success/failure lines)
 ./branding/debrand-mobile.sh                       # app identity
 python3 branding/debrand-mobile-sentry.py          # mobile crash reporter
 
