@@ -282,11 +282,13 @@ func (p *Plugin) notifyAIFinal(m *Meeting, s *AISession) {
 	if title == "" {
 		title = m.RoomName
 	}
-	msg := "AI summary ready for **" + title + "**."
+	// A short, scannable notice: what happened, for which meeting, and one
+	// link. The summary text itself stays in the assistant.
+	msg := "**AI Meeting Summary Ready**\nYour meeting insights for **" + title + "** are ready."
 	if link := p.permalink(m.ChannelID, m.PostID); link != "" {
-		msg += " [Open the meeting](" + link + ") and press **AI Assistant** on its card."
+		msg += "\n[Open AI Assistant](" + link + ") — then press **AI Assistant** on the meeting card."
 	} else {
-		msg += " Open the channel and press **AI Assistant** on the meeting's card to read it."
+		msg += "\nOpen the channel and press **AI Assistant** on the meeting card."
 	}
 	key := KindAISummaryReady + ":" + m.ID + ":" + strconv.FormatInt(s.Final.ReceivedAt, 10)
 	p.dmOnce(KindAISummaryReady, m.ID, m.CreatorID, key, msg)
@@ -302,5 +304,5 @@ func (p *Plugin) notifyAIFailed(m *Meeting, s *AISession) {
 	}
 	key := KindAIFailed + ":" + m.ID + ":" + strconv.FormatInt(s.LastEventAt, 10)
 	p.dmOnce(KindAIFailed, m.ID, m.CreatorID, key,
-		"The AI assistant could not process **"+title+"**. The transcript and summary may be unavailable.")
+		"**AI Meeting Insights Unavailable**\nMeeting insights for **"+title+"** could not be prepared. The transcript and summary may be unavailable.")
 }

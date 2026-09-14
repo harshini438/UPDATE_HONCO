@@ -193,15 +193,35 @@ button is one press away.
 
 ### Controls
 
-`Start AI session` (only when a service URL is configured and the meeting is
-running), `Stop AI session` (only while connecting/live) and `Reconnect`
-(always — it re-reads the session from the server and retries the service if
-it had dropped out). Start on a live session and Stop on an ended one are
-no-ops server-side, so repeated presses cannot create a second session.
+Contextual, never contradictory:
 
-If this browser's WebSocket goes down the header says **Reconnecting…** and
-the panel re-reads the session when it comes back; it never silently shows
-stale state as live.
+| State | Controls |
+|---|---|
+| Live / Connecting | `Stop session` · `Reconnect` |
+| Ready (service URL set, meeting running) | `Start AI session` · `Reconnect` |
+| Ended / Failed / Offline, meeting still running | `Start new AI session` · `Reconnect` |
+| Completed | `Reconnect` |
+
+Start on a live session and Stop on an ended one are no-ops server-side, so
+repeated presses cannot create a second session. `Reconnect` re-reads the
+session from the server and retries the service if it had dropped out.
+
+The header shows the status as a glyph **and** a word (`● Live`,
+`● Connecting`, `● Reconnecting`, `○ Offline`, `○ Ready`, `○ Ended`,
+`● Processing`, `✓ Completed`, `⚠ Failed`) with a one-line explanation
+underneath; nothing relies on colour alone. If this browser's WebSocket goes
+down the header says **Reconnecting** and a banner reads "Connection
+interrupted. Reconnecting…"; the panel re-reads the session when the socket
+returns and never shows stale state as live.
+
+After the call the panel becomes **AI Meeting Summary**: meeting, status
+(`✓ Analysis ready` / `Preparing meeting insights…` / `Insights could not be
+prepared`), then collapsible sections — Summary, Action items and Key
+insights open by default; Key points, Decisions, Client insights, Important
+topics and Transcript a click away. Action items render as a checklist
+(visual only — nothing is written back and no Honco task is created);
+"Owner: x" and "Label: text" are split for display when the service sends
+them in that form, never inferred.
 
 ## 4. Meeting association
 

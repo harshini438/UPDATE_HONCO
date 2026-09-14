@@ -208,46 +208,95 @@
         '.hw-pager-range{margin-left:auto;font-variant-numeric:tabular-nums}',
         '.hw-pre{margin-top:6px;padding:8px;font-size:12px;line-height:1.45;white-space:pre-wrap;border-radius:4px;background:rgba(var(--center-channel-color-rgb),.04);color:var(--center-channel-color);border:0}',
         '.hw-hint{margin-top:10px;padding:8px 10px;border-radius:4px;font-size:12px;line-height:1.5;background:rgba(var(--center-channel-color-rgb),.06);color:rgba(var(--center-channel-color-rgb),.8)}',
-        '.hw-ai-pill{display:inline-flex;align-items:center;gap:6px;margin-left:auto;font-size:12px;color:rgba(var(--center-channel-color-rgb),.72)}',
-        '.hw-ai-controls{display:flex;flex:none;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid rgba(var(--center-channel-color-rgb),.08);background:rgba(var(--center-channel-color-rgb),.02)}',
+        '.hw-ai-head{flex:none;padding:12px 12px 10px;border-bottom:1px solid rgba(var(--center-channel-color-rgb),.08);background:rgba(var(--center-channel-color-rgb),.02)}',
+        '.hw-ai-head-row{display:flex;align-items:center;gap:8px;min-width:0}',
+        '.hw-ai-avatar{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;flex:none;background:rgba(var(--button-bg-rgb),.12);color:var(--button-bg)}',
+        '.hw-ai-avatar .icon{font-size:16px;line-height:1}',
+        '.hw-ai-head-name{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+        '.hw-ai-pill{display:inline-flex;align-items:center;gap:6px;margin-left:auto;flex:none;padding:2px 9px 2px 7px;border-radius:12px;font-size:12px;font-weight:600;background:rgba(var(--center-channel-color-rgb),.06);color:rgba(var(--center-channel-color-rgb),.8)}',
+        '.hw-ai-pill-ok{background:rgba(var(--online-indicator-rgb),.12);color:var(--online-indicator)}',
+        '.hw-ai-pill-warn{background:rgba(var(--away-indicator-rgb),.16);color:rgba(var(--center-channel-color-rgb),.85)}',
+        '.hw-ai-pill-err{background:rgba(var(--error-text-color-rgb),.1);color:var(--error-text)}',
+        '.hw-ai-glyph{font-size:11px;line-height:1}',
+        '.hw-ai-pulse{animation:hw-glow 1.8s ease-in-out infinite}',
+        '@keyframes hw-glow{0%,100%{opacity:1}50%{opacity:.35}}',
+        '.hw-ai-head-meeting{margin-top:8px;font-size:15px;font-weight:600;line-height:1.3;word-break:break-word}',
+        '.hw-ai-head-line{margin-top:3px;font-size:12px;color:rgba(var(--center-channel-color-rgb),.64);display:flex;flex-wrap:wrap;gap:4px 0}',
+        '.hw-ai-head-sep:before{content:"·";margin:0 6px;opacity:.7}',
+        '.hw-ai-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px}',
         '.hw-ai-controls .hw-btn{flex:none}',
-        '.hw-ai-pulse{box-shadow:0 0 0 0 rgba(var(--online-indicator-rgb),.5);animation:hw-pulse 1.8s ease-out infinite}',
-        '@keyframes hw-pulse{0%{box-shadow:0 0 0 0 rgba(var(--online-indicator-rgb),.45)}70%{box-shadow:0 0 0 6px rgba(var(--online-indicator-rgb),0)}100%{box-shadow:0 0 0 0 rgba(var(--online-indicator-rgb),0)}}',
-        '.hw-ai-meeting{padding:12px 12px 10px;border-bottom:1px solid rgba(var(--center-channel-color-rgb),.08)}',
-        '.hw-ai-meeting-title{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:600;margin-top:2px;word-break:break-word}',
-        '.hw-ai-meeting-title .icon{font-size:18px;line-height:1}',
-        '.hw-ai-block{padding:12px 12px 6px;border-bottom:1px solid rgba(var(--center-channel-color-rgb),.08)}',
+        '.hw-ai-banner{display:flex;align-items:center;gap:8px;margin:10px 12px 0;padding:8px 10px;border-radius:6px;font-size:12px;line-height:1.45;background:rgba(var(--away-indicator-rgb),.14);color:var(--center-channel-color)}',
+        '.hw-ai-banner .icon{font-size:15px;flex:none}',
+        '.hw-ai-banner-err{background:rgba(var(--error-text-color-rgb),.08);color:var(--error-text)}',
+        '.hw-ai-pick{padding:10px 12px 0}',
+        '.hw-ai-intro{padding-top:8px}',
+        '.hw-ai-intro .hw-empty{padding-top:28px}',
+        '.hw-ai-block{padding:14px 12px 10px;border-bottom:1px solid rgba(var(--center-channel-color-rgb),.08)}',
         '.hw-ai-block:last-child{border-bottom:0}',
-        '.hw-ai-section{margin-bottom:12px}',
-        '.hw-ai-card{border:1px solid rgba(var(--center-channel-color-rgb),.12);border-left:3px solid var(--button-bg);border-radius:6px;padding:10px 12px;margin-bottom:8px;background:rgba(var(--center-channel-color-rgb),.03)}',
-        '.hw-ai-card-latest{background:rgba(var(--button-bg-rgb),.05);border-color:rgba(var(--button-bg-rgb),.25);border-left-width:3px}',
-        '.hw-ai-card-head{display:flex;align-items:center;gap:6px;margin-bottom:4px}',
-        '.hw-ai-card-head .icon{font-size:16px;line-height:1}',
-        '.hw-ai-card-kind{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:rgba(var(--center-channel-color-rgb),.72)}',
+        '.hw-ai-block-bare{padding:0;border-bottom:0}',
+        '.hw-ai-block-primary{padding-top:12px}',
+        '.hw-ai-block-title{display:flex;align-items:center;gap:6px;margin-bottom:8px;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:rgba(var(--center-channel-color-rgb),.64)}',
+        '.hw-ai-block-title .icon{font-size:15px;line-height:1}',
+        '.hw-ai-count{font-weight:400;text-transform:none;letter-spacing:0}',
+        '.hw-ai-tag{margin-left:4px;padding:0 6px;font-size:10px;line-height:15px;text-transform:none;letter-spacing:0}',
+        '.hw-ai-card{border:1px solid rgba(var(--center-channel-color-rgb),.12);border-left:3px solid var(--button-bg);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:var(--center-channel-bg);transition:box-shadow .2s,border-color .2s}',
+        '.hw-ai-card-latest{border-color:rgba(var(--button-bg-rgb),.3);border-left-width:3px;background:rgba(var(--button-bg-rgb),.05);box-shadow:0 1px 2px rgba(0,0,0,.04)}',
+        '.hw-ai-card-new{box-shadow:0 0 0 2px rgba(var(--button-bg-rgb),.25)}',
+        '.hw-ai-card-empty{border-left-color:rgba(var(--center-channel-color-rgb),.2);background:rgba(var(--center-channel-color-rgb),.02)}',
+        '.hw-ai-card-head{display:flex;align-items:center;gap:6px;margin-bottom:6px;min-width:0}',
+        '.hw-ai-card-head .icon{font-size:16px;line-height:1;flex:none}',
+        '.hw-ai-card-kind{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:rgba(var(--center-channel-color-rgb),.64);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
         '.hw-ai-card-body{font-size:14px;line-height:1.5;color:var(--center-channel-color);white-space:pre-wrap;word-break:break-word}',
-        '.hw-ai-card-latest .hw-ai-card-body{font-size:15px}',
-        '.hw-ai-card-foot{margin-top:6px;font-size:11px;color:rgba(var(--center-channel-color-rgb),.56)}',
+        '.hw-ai-card-latest .hw-ai-card-body{font-size:16px;line-height:1.45;font-weight:500}',
+        '.hw-ai-card-foot{margin-top:8px;font-size:11px;color:rgba(var(--center-channel-color-rgb),.56)}',
         '.hw-ai-prev{margin-top:6px}',
-        '.hw-ai-prev .hw-ai-card{padding:8px 10px}',
+        '.hw-ai-prev .hw-ai-card{padding:8px 10px;background:transparent}',
         '.hw-ai-prev .hw-ai-card-body{font-size:13px}',
-        '.hw-ai-insight{display:flex;gap:8px;align-items:flex-start;padding:6px 0;font-size:13px}',
-        '.hw-ai-insight .icon{font-size:16px;line-height:1.2;flex-shrink:0}',
-        '.hw-ai-insight-text{line-height:1.45;word-break:break-word}',
-        '.hw-ai-topics{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 4px}',
-        '.hw-ai-topics .hw-chip{cursor:default}',
-        '.hw-ai-quiet{font-size:12px;color:rgba(var(--center-channel-color-rgb),.64);padding:4px 0 8px;line-height:1.5}',
+        '.hw-ai-insights{display:flex;flex-direction:column;gap:2px}',
+        '.hw-ai-insight{display:flex;gap:10px;align-items:flex-start;padding:7px 8px;border-radius:6px;font-size:13px;background:rgba(var(--center-channel-color-rgb),.03)}',
+        '.hw-ai-insight-icon{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;flex:none;background:rgba(var(--center-channel-color-rgb),.05)}',
+        '.hw-ai-insight-icon .icon{font-size:15px;line-height:1}',
+        '.hw-ai-insight-text{line-height:1.45;word-break:break-word;margin-top:1px}',
+        '.hw-ai-topics{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 4px}',
+        '.hw-ai-topics .hw-chip{cursor:default;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+        '.hw-ai-quiet{font-size:12px;color:rgba(var(--center-channel-color-rgb),.64);padding:2px 0 6px;line-height:1.5}',
         '.hw-ai-older{font-size:12px;color:rgba(var(--center-channel-color-rgb),.64);padding:0 0 6px}',
-        '.hw-ai-transcript{max-height:46vh;overflow-y:auto;border:1px solid rgba(var(--center-channel-color-rgb),.08);border-radius:6px;padding:4px 10px;background:rgba(var(--center-channel-color-rgb),.02)}',
-        '.hw-ai-line{padding:6px 0;border-bottom:1px solid rgba(var(--center-channel-color-rgb),.06)}',
+        '.hw-ai-transcript{max-height:46vh;overflow-y:auto;border:1px solid rgba(var(--center-channel-color-rgb),.08);border-radius:8px;padding:2px 12px;background:rgba(var(--center-channel-color-rgb),.02)}',
+        '.hw-ai-line{padding:8px 0;border-bottom:1px solid rgba(var(--center-channel-color-rgb),.06)}',
         '.hw-ai-line:last-child{border-bottom:0}',
-        '.hw-ai-line-interim .hw-ai-text{opacity:.6;font-style:italic}',
-        '.hw-ai-line-meta{display:flex;gap:8px;align-items:baseline;font-size:11px;margin-bottom:2px}',
+        '.hw-ai-line-interim .hw-ai-text{opacity:.62;font-style:italic}',
+        '.hw-ai-line-meta{display:flex;gap:8px;align-items:baseline;font-size:11px;margin-bottom:3px}',
         '.hw-ai-time{font-variant-numeric:tabular-nums;color:rgba(var(--center-channel-color-rgb),.56)}',
-        '.hw-ai-speaker{font-weight:700;color:var(--button-bg)}',
-        '.hw-ai-text{font-size:13px;line-height:1.45;white-space:pre-wrap;word-break:break-word;color:var(--center-channel-color)}',
-        '.hw-ai-summary{font-size:13px;line-height:1.55;white-space:pre-wrap;word-break:break-word}',
+        '.hw-ai-speaker{font-weight:700;font-size:12px;color:var(--center-channel-color)}',
+        '.hw-ai-interim-tag{font-size:10px;color:rgba(var(--center-channel-color-rgb),.56);font-style:italic}',
+        '.hw-ai-text{font-size:13.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word;color:var(--center-channel-color)}',
+        '.hw-ai-jump{display:flex;justify-content:flex-end;padding-top:8px}',
+        '.hw-ai-done-head{padding:14px 12px 10px;border-bottom:1px solid rgba(var(--center-channel-color-rgb),.08)}',
+        '.hw-ai-done-title{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:rgba(var(--center-channel-color-rgb),.64);margin-bottom:8px}',
+        '.hw-ai-done-meta{display:flex;gap:10px;align-items:baseline;font-size:13px;margin-top:3px;min-width:0}',
+        '.hw-ai-done-k{flex:none;width:56px;font-size:11px;font-weight:600;color:rgba(var(--center-channel-color-rgb),.56)}',
+        '.hw-ai-done-status{display:inline-flex;align-items:center;gap:5px}',
+        '.hw-ai-done-status .icon{font-size:15px;line-height:1}',
+        '.hw-ai-done-ok{color:var(--online-indicator);font-weight:600}',
+        '.hw-ai-done-err{color:var(--error-text);font-weight:600}',
+        '.hw-ai-sec{border-bottom:1px solid rgba(var(--center-channel-color-rgb),.08)}',
+        '.hw-ai-sec-head{display:flex;align-items:center;gap:8px;width:100%;padding:11px 12px;background:none;border:0;font:inherit;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:rgba(var(--center-channel-color-rgb),.72);cursor:pointer;text-align:left;transition:background .12s}',
+        '.hw-ai-sec-head:hover{background:rgba(var(--center-channel-color-rgb),.04)}',
+        '.hw-ai-sec-head .icon{font-size:15px;line-height:1}',
+        '.hw-ai-sec-open .hw-ai-sec-head{color:var(--center-channel-color)}',
+        '.hw-ai-sec-body{padding:0 12px 12px}',
+        '.hw-ai-summary{font-size:13.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word}',
         '.hw-ai-list{margin:0;padding-left:18px;font-size:13px;line-height:1.5}',
-        '.hw-ai-list li{margin-bottom:3px;word-break:break-word}',
+        '.hw-ai-list li{margin-bottom:4px;word-break:break-word}',
+        '.hw-ai-actions{list-style:none;margin:0;padding:0}',
+        '.hw-ai-action{display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-bottom:1px solid rgba(var(--center-channel-color-rgb),.06)}',
+        '.hw-ai-action:last-child{border-bottom:0}',
+        '.hw-ai-checkbox{flex:none;width:16px;height:16px;margin-top:2px;border:1.5px solid rgba(var(--center-channel-color-rgb),.4);border-radius:4px}',
+        '.hw-ai-action-text{font-size:13px;line-height:1.45;word-break:break-word}',
+        '.hw-ai-action-owner{font-size:11px;color:rgba(var(--center-channel-color-rgb),.56);margin-top:1px}',
+        '.hw-ai-labelled{display:flex;flex-direction:column;gap:8px}',
+        '.hw-ai-labelled-text{font-size:13px;line-height:1.45;word-break:break-word}',
+        '.hw-ai-delivered{padding:8px 12px 10px;font-size:11px;color:rgba(var(--center-channel-color-rgb),.56)}',
         '.hw-fade{animation:hw-fade .16s ease-out}',
         '@keyframes hw-fade{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:none}}',
         '.hw :focus-visible{outline:2px solid var(--button-bg);outline-offset:1px}',
@@ -1290,28 +1339,37 @@
         AIIntent.open(meetingId);
     };
 
+    // Status, as a person should read it: a glyph and a word, never colour
+    // alone. `tone` picks the dot colour; `glyph` is what a screen reader
+    // and a colour-blind reader get. `line` is the one-sentence explanation
+    // shown under the header.
     var AI_STATUS = {
-        not_configured: {label: 'Not configured', tone: ''},
-        idle: {label: 'Ready', tone: ''},
-        connecting: {label: 'Connecting…', tone: 'warn'},
-        live: {label: 'Connected', tone: 'ok'},
-        ended: {label: 'Meeting ended', tone: ''},
-        completed: {label: 'Completed', tone: 'ok'},
-        unavailable: {label: 'Unavailable', tone: 'err'},
-        reconnecting: {label: 'Reconnecting…', tone: 'warn'},
-        failed: {label: 'Processing failed', tone: 'err'},
+        not_configured: {label: 'Offline', glyph: '○', tone: '', line: 'AI Assistant is not set up on this server yet.'},
+        idle: {label: 'Ready', glyph: '○', tone: '', line: 'Waiting for Honco AI to join this meeting.'},
+        connecting: {label: 'Connecting', glyph: '●', tone: 'warn', line: 'Connecting to Honco AI…'},
+        live: {label: 'Live', glyph: '●', tone: 'ok', line: 'AI Assistant is listening.'},
+        reconnecting: {label: 'Reconnecting', glyph: '●', tone: 'warn', line: 'Connection interrupted. Reconnecting…'},
+        ended: {label: 'Ended', glyph: '○', tone: '', line: 'AI session ended.'},
+        processing: {label: 'Processing', glyph: '●', tone: 'warn', line: 'Preparing meeting insights…'},
+        completed: {label: 'Completed', glyph: '✓', tone: 'ok', line: 'Meeting completed.'},
+        unavailable: {label: 'Offline', glyph: '○', tone: 'err', line: 'AI Assistant is currently unavailable.'},
+        failed: {label: 'Failed', glyph: '⚠', tone: 'err', line: 'Meeting insights could not be prepared.'},
     };
 
-    // How a suggestion kind from the service is presented. Unknown kinds
-    // fall back to the generic suggestion look rather than being hidden.
+    // How a suggestion or insight kind from the service is presented. The
+    // label is a small tag on the card; the card's headline is always what
+    // the thing IS (a sales suggestion, an insight). Unknown kinds fall back
+    // to the generic look rather than being hidden.
     var AI_KINDS = {
-        suggestion: {icon: 'lightbulb-outline', label: 'AI Suggestion', accent: 'var(--button-bg)'},
-        suggested_response: {icon: 'message-text-outline', label: 'Suggested Response', accent: 'var(--button-bg)'},
-        next_best_action: {icon: 'lightning-bolt-outline', label: 'Next Best Action', accent: 'var(--online-indicator)'},
-        client_concern: {icon: 'alert-outline', label: 'Client Concern', accent: 'var(--away-indicator)'},
+        suggestion: {icon: 'lightbulb-outline', label: 'Suggestion', accent: 'var(--button-bg)'},
+        suggested_response: {icon: 'message-text-outline', label: 'Suggested response', accent: 'var(--button-bg)'},
+        next_best_action: {icon: 'lightning-bolt-outline', label: 'Next best action', accent: 'var(--online-indicator)'},
+        client_concern: {icon: 'alert-outline', label: 'Client concern', accent: 'var(--away-indicator)'},
         objection: {icon: 'alert-outline', label: 'Objection', accent: 'var(--away-indicator)'},
         opportunity: {icon: 'star-outline', label: 'Opportunity', accent: 'var(--online-indicator)'},
-        insight: {icon: 'lightning-bolt-outline', label: 'Insight', accent: 'var(--button-bg)'},
+        buying_signal: {icon: 'star-outline', label: 'Buying signal', accent: 'var(--online-indicator)'},
+        insight: {icon: 'lightbulb-outline', label: 'Insight', accent: 'var(--button-bg)'},
+        interest: {icon: 'star-outline', label: 'Client interest', accent: 'var(--online-indicator)'},
         sentiment: {icon: 'emoticon-outline', label: 'Sentiment', accent: 'var(--button-bg)'},
         concern: {icon: 'alert-outline', label: 'Concern', accent: 'var(--away-indicator)'},
     };
@@ -1329,24 +1387,35 @@
         function two(n) {
             return (n < 10 ? '0' : '') + n;
         }
-        return two(d.getHours()) + ':' + two(d.getMinutes()) + ':' + two(d.getSeconds());
+        var h = d.getHours();
+        var ampm = h >= 12 ? 'PM' : 'AM';
+        h = h % 12 || 12;
+        return h + ':' + two(d.getMinutes()) + ' ' + ampm;
     }
 
-    // What the panel should say for a session that has no content to show
-    // yet. Returns null when there is content or a state with its own UI.
+    // What the panel should say for a connection that did not happen.
+    // A class from the server, never a message from the transport.
     function aiErrorText(kind) {
         switch (kind) {
         case 'auth':
-            return 'The AI service rejected Honco’s credentials. An administrator needs to check the AI service token.';
+            return 'Honco AI declined this server’s credentials. An administrator needs to check the AI service token.';
         case 'timeout':
-            return 'The AI service did not answer in time.';
+            return 'Honco AI did not answer in time.';
         case 'refused':
-            return 'The AI service refused this meeting.';
+            return 'Honco AI declined this meeting.';
         case 'not_configured':
-            return 'The AI service is not configured.';
+            return 'AI Assistant is not set up on this server yet.';
         default:
-            return 'Unable to connect to the AI service.';
+            return 'AI Assistant is currently unavailable.';
         }
+    }
+
+    // "Label: text" from the service becomes a label and a text; anything
+    // else is shown as it came. Nothing is inferred about what the label
+    // means -- the service chose it.
+    function splitLabelled(s) {
+        var m = /^([A-Za-z][A-Za-z /-]{1,40}):\s+(.+)$/.exec(s || '');
+        return m ? {label: m[1], text: m[2]} : {label: '', text: s};
     }
 
     function StatusPill(props) {
@@ -1354,66 +1423,132 @@
         var dot = st.tone === 'ok' ? 'var(--online-indicator)' :
             (st.tone === 'warn' ? 'var(--away-indicator)' :
                 (st.tone === 'err' ? 'var(--error-text)' : 'rgba(var(--center-channel-color-rgb), 0.4)'));
-        return e('span', {className: 'hw-ai-pill', 'data-ai-status': props.status, title: 'AI service: ' + st.label}, [
-            e('span', {key: 'd', className: 'hw-dot' + (props.status === 'live' ? ' hw-ai-pulse' : ''), style: {background: dot}}),
+        return e('span', {
+            className: 'hw-ai-pill hw-ai-pill-' + (st.tone || 'muted'),
+            'data-ai-status': props.status,
+            role: 'status',
+            'aria-label': 'AI Assistant status: ' + st.label,
+        }, [
+            e('span', {key: 'g', className: 'hw-ai-glyph' + (props.status === 'live' ? ' hw-ai-pulse' : ''), style: {color: dot}, 'aria-hidden': true}, st.glyph),
             e('span', {key: 'l'}, st.label),
         ]);
     }
 
+    // One utterance. The speaker leads, the time sits with it, the text is
+    // the body. An interim line is set apart so a person never mistakes a
+    // guess for the record.
     function TranscriptLine(props) {
         var l = props.line;
-        return e('div', {className: 'hw-ai-line' + (l.final ? '' : ' hw-ai-line-interim'), 'data-seq': l.seq}, [
+        return e('div', {
+            className: 'hw-ai-line' + (l.final ? '' : ' hw-ai-line-interim'),
+            'data-seq': l.seq,
+            'aria-label': (l.speaker || 'Speaker') + (l.final ? '' : ', still transcribing'),
+        }, [
             e('div', {key: 'm', className: 'hw-ai-line-meta'}, [
-                e('span', {key: 't', className: 'hw-ai-time'}, formatClock(l.at)),
                 e('span', {key: 's', className: 'hw-ai-speaker'}, l.speaker || 'Speaker'),
+                e('span', {key: 't', className: 'hw-ai-time'}, formatClock(l.at)),
+                l.final ? null : e('span', {key: 'p', className: 'hw-ai-interim-tag'}, 'transcribing…'),
             ]),
             e('div', {key: 'x', className: 'hw-ai-text'}, l.text),
         ]);
     }
 
+    // The latest suggestion is the card a salesperson reads mid-sentence, so
+    // its headline says what it is and the text is the biggest thing on the
+    // panel. A tag carries the service's kind; the footer says who said it.
     function SuggestionCard(props) {
         var s = props.suggestion;
         var k = aiKind(s.kind, 'suggestion');
         return e('div', {
-            className: 'hw-ai-card' + (props.latest ? ' hw-ai-card-latest hw-fade' : ''),
+            className: 'hw-ai-card' + (props.latest ? ' hw-ai-card-latest' : '') + (props.fresh ? ' hw-ai-card-new' : ''),
             style: {borderLeftColor: k.accent},
             'data-suggestion-id': s.id,
+            role: props.latest ? 'status' : undefined,
+            'aria-live': props.latest ? 'polite' : undefined,
         }, [
             e('div', {key: 'h', className: 'hw-ai-card-head'}, [
-                e(Icon, {key: 'i', name: k.icon, style: {color: k.accent}}),
-                e('span', {key: 'k', className: 'hw-ai-card-kind'}, s.title || k.label),
+                e(Icon, {key: 'i', name: props.latest ? 'lightbulb-outline' : k.icon, style: {color: k.accent}}),
+                e('span', {key: 'k', className: 'hw-ai-card-kind'}, props.latest ? 'Sales suggestion' : (s.title || k.label)),
+                (props.latest && s.kind && k.label !== 'Suggestion') ? e('span', {key: 'tag', className: 'hw-badge hw-ai-tag'}, s.title || k.label) : null,
+                props.fresh ? e('span', {key: 'new', className: 'hw-badge hw-badge-ok hw-ai-tag'}, 'New') : null,
                 e('span', {key: 't', className: 'hw-ai-time hw-spacer'}, formatClock(s.at)),
             ]),
             e('div', {key: 'b', className: 'hw-ai-card-body'}, s.text),
-            (s.source || s.status) ? e('div', {key: 'f', className: 'hw-ai-card-foot'},
-                [s.source, s.status].filter(Boolean).join(' · ')) : null,
+            e('div', {key: 'f', className: 'hw-ai-card-foot'},
+                'Suggested by ' + (s.source || 'Honco AI') + (s.status ? ' · ' + s.status : '')),
         ]);
     }
 
+    // A compact insight row: one consistent glyph, the service's label, the
+    // text. Labelled "Concern: ..." text is split so the label reads as one.
     function InsightRow(props) {
         var i = props.insight;
         var k = aiKind(i.kind, 'insight');
+        var parts = i.title ? {label: i.title, text: i.text} : splitLabelled(i.text);
         return e('div', {className: 'hw-ai-insight', 'data-insight-id': i.id}, [
-            e(Icon, {key: 'i', name: k.icon, style: {color: k.accent}}),
-            e('div', {key: 'b'}, [
-                e('div', {key: 'k', className: 'hw-ai-card-kind'}, i.title || k.label),
-                e('div', {key: 't', className: 'hw-ai-insight-text'}, i.text),
+            e('span', {key: 'i', className: 'hw-ai-insight-icon', style: {color: k.accent}}, e(Icon, {name: k.icon})),
+            e('div', {key: 'b', style: {minWidth: 0}}, [
+                e('div', {key: 'k', className: 'hw-ai-card-kind'}, parts.label || k.label),
+                e('div', {key: 't', className: 'hw-ai-insight-text'}, parts.text),
             ]),
         ]);
     }
 
-    function ListSection(props) {
-        if (!props.items || !props.items.length) {
-            return null;
-        }
-        return e('div', {className: 'hw-ai-section'}, [
-            e('div', {key: 'h', className: 'hw-section-title', style: {padding: '0 0 6px'}}, [
-                e(Icon, {key: 'i', name: props.icon, style: {marginRight: 6}}), props.title,
+    // A collapsible section of the completed view. A real button with
+    // aria-expanded, so it works from the keyboard and reads correctly.
+    function Section2(props) {
+        var open = props.open;
+        return e('section', {className: 'hw-ai-sec' + (open ? ' hw-ai-sec-open' : ''), 'aria-label': props.title}, [
+            e('button', {
+                key: 'h',
+                type: 'button',
+                className: 'hw-ai-sec-head',
+                'aria-expanded': open,
+                onClick: props.onToggle,
+            }, [
+                e(Icon, {key: 'i', name: props.icon}),
+                e('span', {key: 't', className: 'hw-ai-sec-title'}, props.title),
+                props.count != null ? e('span', {key: 'n', className: 'hw-badge'}, props.count) : null,
+                e(Icon, {key: 'c', name: open ? 'chevron-up' : 'chevron-down', style: {marginLeft: 'auto', opacity: 0.6}}),
             ]),
-            e('ul', {key: 'l', className: 'hw-ai-list'}, props.items.map(function (t, i) {
-                return e('li', {key: i}, t);
-            })),
+            open ? e('div', {key: 'b', className: 'hw-ai-sec-body hw-fade'}, props.children) : null,
         ]);
+    }
+
+    function BulletList(props) {
+        return e('ul', {className: 'hw-ai-list'}, (props.items || []).map(function (t, i) {
+            return e('li', {key: i}, t);
+        }));
+    }
+
+    // Action items read as a checklist. The boxes are visual: nothing here
+    // creates a Honco task or writes anything back -- the service's list is
+    // shown as the service gave it. "Owner: x" is split when present.
+    function ActionList(props) {
+        return e('ul', {className: 'hw-ai-actions'}, (props.items || []).map(function (t, i) {
+            var m = /^(.*?)(?:\s+[—–-]\s+|\s*\()\s*(?:owner|assignee)\s*[:=]\s*([^)]+)\)?\s*$/i.exec(t);
+            var text = m ? m[1] : t;
+            var owner = m ? m[2] : '';
+            return e('li', {key: i, className: 'hw-ai-action'}, [
+                e('span', {key: 'b', className: 'hw-ai-checkbox', 'aria-hidden': true}),
+                e('div', {key: 't', style: {minWidth: 0}}, [
+                    e('div', {key: 'x', className: 'hw-ai-action-text'}, text),
+                    owner ? e('div', {key: 'o', className: 'hw-ai-action-owner'}, 'Owner: ' + owner) : null,
+                ]),
+            ]);
+        }));
+    }
+
+    // Client insights get a label/text hierarchy when the service labelled
+    // them ("Interest: …", "Concern: …"); otherwise they are plain rows.
+    function LabelledList(props) {
+        return e('div', {className: 'hw-ai-labelled'}, (props.items || []).map(function (t, i) {
+            var p = splitLabelled(t);
+            return e('div', {key: i, className: 'hw-ai-labelled-row'}, [
+                p.label ? e('div', {key: 'l', className: 'hw-ai-card-kind'}, p.label) : null,
+                e('div', {key: 't', className: 'hw-ai-labelled-text'}, p.text),
+            ]);
+        }));
     }
 
     function AIPanel() {
@@ -1772,32 +1907,133 @@
         // Whether anything precedes the first line on screen -- asked of what
         // is rendered right now, not of what was true when the panel opened.
         var hasOlder = st.lines.length > 0 && st.lines[0].seq > 0;
+        var hasFinal = Boolean(session && session.final && (session.final.summary ||
+            (session.final.key_points || []).length || (session.final.action_items || []).length ||
+            (session.final.decisions || []).length || (session.final.key_insights || []).length ||
+            (session.final.client_insights || []).length));
 
-        var header = e(Toolbar, {key: 'bar', icon: 'creation-outline', title: 'Honco AI Assistant'},
-            e(StatusPill, {key: 'st', status: wsUp ? status : 'reconnecting'}));
+        // The status a person reads. The transport's own state comes first
+        // (a down socket makes everything else stale), then the service's.
+        // A session that ended with the service present but no summary yet
+        // is "processing": the summary normally follows the end of the call.
+        var viewStatus = status;
+        if (!wsUp) {
+            viewStatus = 'reconnecting';
+        } else if (status === 'ended' && session && session.events_received > 0 && !hasFinal &&
+            meeting && meeting.status === 'ended') {
+            // The call is over and the service was there: its summary
+            // normally follows. A session a person stopped mid-call is
+            // simply ended.
+            viewStatus = 'processing';
+        } else if (status === 'completed' && !hasFinal) {
+            viewStatus = 'processing';
+        }
+        var statusInfo = AI_STATUS[viewStatus] || AI_STATUS.idle;
 
-        // The controls a person actually has: start the assistant on this
-        // meeting, stop it, or ask the server again. Shown only when there
-        // is a meeting to act on, and each one is enabled only when it would
-        // do something.
+        // "New" on the latest suggestion for a few seconds after it arrives.
+        // The first suggestion seen after opening is not new -- it is what
+        // was already there.
+        var latestSug = (session && session.suggestions && session.suggestions.length)
+            ? session.suggestions[session.suggestions.length - 1] : null;
+        var latestSugId = latestSug ? latestSug.id : null;
+        var fr = React.useState({id: null, fresh: false});
+        var freshState = fr[0];
+        var setFresh = fr[1];
+        React.useEffect(function () {
+            if (!latestSugId || freshState.id === latestSugId) {
+                return undefined;
+            }
+            var first = freshState.id === null;
+            setFresh({id: latestSugId, fresh: !first});
+            if (first) {
+                return undefined;
+            }
+            var t = window.setTimeout(function () {
+                setFresh(function (p) {
+                    return Object.assign({}, p, {fresh: false});
+                });
+            }, 6000);
+            return function () {
+                window.clearTimeout(t);
+            };
+        }, [latestSugId]);
+
+        // Which sections of the completed view are open. The ones a person
+        // reads first are open; the rest are a click away.
+        var sc = React.useState({summary: true, key_points: false, decisions: false, action_items: true, key_insights: true, client_insights: true, topics: true, transcript: false});
+        var sections = sc[0];
+        var setSections = sc[1];
+        function toggleSection(name) {
+            return function () {
+                var next = {};
+                next[name] = !sections[name];
+                setSections(Object.assign({}, sections, next));
+                if (name === 'transcript') {
+                    setUi(Object.assign({}, ui, {showTranscript: !sections.transcript, followLive: false}));
+                }
+            };
+        }
+
+        // ---- header ---------------------------------------------------------
+
+        // The controls a person actually has, per state (never contradictory):
+        //   live / connecting  -> Stop session, Reconnect
+        //   idle (allowed)     -> Start AI session, Reconnect
+        //   ended/failed/offline, meeting still running -> Start new AI session, Reconnect
+        //   completed          -> Reconnect
+        var canStart = Boolean(session && meeting && cfg.service_configured && !finished &&
+            status !== 'live' && status !== 'connecting');
+        var canRestart = Boolean(session && meeting && cfg.service_configured && meeting.status === 'active' &&
+            (status === 'ended' || status === 'failed' || status === 'unavailable'));
+        var canStop = Boolean(session && (status === 'live' || status === 'connecting'));
+
+        // With nothing to show yet the body is an introduction whose one
+        // button IS the start control, so the header does not repeat it.
+        var hasContentNow = Boolean(session && (st.lines.length || (session.suggestions || []).length || (session.insights || []).length));
+        var showIntro = Boolean(session && !finished && !hasContentNow &&
+            (status === 'idle' || status === 'not_configured' || status === 'unavailable' || status === 'failed' || status === 'connecting'));
+
         var controls = null;
         if (session && meeting) {
-            var canStart = cfg.service_configured && !finished &&
-                status !== 'live' && status !== 'connecting';
-            var canStop = status === 'live' || status === 'connecting';
             controls = e('div', {key: 'controls', className: 'hw-ai-controls'}, [
-                canStart ? e(Button, {
-                    key: 'start', small: true, icon: 'play', disabled: ui.starting, onClick: startSession,
-                }, ui.starting ? 'Starting…' : 'Start AI session') : null,
                 canStop ? e(Button, {
                     key: 'stop', kind: 'ghost', small: true, icon: 'close', disabled: ui.stopping, onClick: stopSession,
-                }, ui.stopping ? 'Stopping…' : 'Stop AI session') : null,
+                }, ui.stopping ? 'Stopping…' : 'Stop session') : null,
+                (canStart && !canRestart && !showIntro) ? e(Button, {
+                    key: 'start', small: true, icon: 'play', disabled: ui.starting, onClick: startSession,
+                }, ui.starting ? 'Starting…' : 'Start AI session') : null,
+                (canRestart && !showIntro) ? e(Button, {
+                    key: 'restart', small: true, icon: 'play', disabled: ui.starting, onClick: startSession,
+                }, ui.starting ? 'Starting…' : 'Start new AI session') : null,
                 e(Button, {
-                    key: 'rc', kind: 'ghost', small: true, icon: 'refresh',
-                    className: (canStart || canStop) ? 'hw-spacer' : '', onClick: reconnect,
+                    key: 'rc', kind: 'ghost', small: true, icon: 'refresh', onClick: reconnect,
+                    'aria-label': 'Reconnect',
                 }, 'Reconnect'),
             ]);
         }
+
+        var header = e('div', {key: 'head', className: 'hw-ai-head'}, [
+            e('div', {key: 'r1', className: 'hw-ai-head-row'}, [
+                e('span', {key: 'i', className: 'hw-ai-avatar', 'aria-hidden': true}, e(Icon, {name: 'creation-outline'})),
+                e('span', {key: 'n', className: 'hw-ai-head-name'}, 'Honco AI Assistant'),
+                e(StatusPill, {key: 'st', status: viewStatus}),
+            ]),
+            meeting ? e('div', {key: 'r2', className: 'hw-ai-head-meeting', title: meetingLabel(meeting)}, meetingLabel(meeting)) : null,
+            e('div', {key: 'r3', className: 'hw-ai-head-line'}, [
+                e('span', {key: 's'}, (viewStatus === 'idle' && meetingLive && (canStart || canRestart))
+                    ? 'Start an AI session while your meeting is active.' : statusInfo.line),
+                (meetingLive && st.participants.length) ? e('span', {key: 'p', className: 'hw-ai-head-sep', title: st.participants.join(', ')},
+                    st.participants.length + ' in the call') : null,
+                // The service's capture status, only when it adds something
+                // ("paused", "not recording"); "listening" is what the status
+                // line already says.
+                (session && session.capture_status && !finished && wsUp && !/^(listening|live|recording)$/i.test(session.capture_status.trim()))
+                    ? e('span', {key: 'c', className: 'hw-ai-head-sep'}, session.capture_status) : null,
+            ]),
+            controls,
+        ]);
+
+        // ---- body -----------------------------------------------------------
 
         var body;
         if (!channelId) {
@@ -1807,7 +2043,7 @@
         } else if (ml.error) {
             body = e(ErrorNote, {}, ml.error);
         } else if (!ml.meetings.length) {
-            body = e(EmptyState, {icon: 'video-outline', title: 'No active meeting'},
+            body = e(EmptyState, {icon: 'video-outline', title: 'No active meeting found'},
                 'Start a call with /meet in this channel. The assistant becomes available when the meeting begins.');
         } else if (st.error) {
             body = e(ErrorNote, {}, st.error);
@@ -1818,7 +2054,7 @@
 
             // Which meeting, when there is more than one to choose from.
             if (ml.meetings.length > 1) {
-                parts.push(e('div', {key: 'pick', style: {padding: '10px 12px 0'}}, e('select', {
+                parts.push(e('div', {key: 'pick', className: 'hw-ai-pick'}, e('select', {
                     className: 'hw-select', style: {margin: 0}, 'aria-label': 'Meeting for the assistant',
                     value: selected,
                     onChange: function (ev) {
@@ -1831,124 +2067,110 @@
                 }))));
             }
 
-            // The meeting header.
-            parts.push(e('div', {key: 'meeting', className: 'hw-ai-meeting'}, [
-                e('div', {key: 'k', className: 'hw-section-title', style: {padding: 0}},
-                    finished ? 'Meeting completed' : 'Current meeting'),
-                e('div', {key: 't', className: 'hw-ai-meeting-title'}, [
-                    finished ? e(Icon, {key: 'i', name: 'check-circle', style: {color: 'var(--online-indicator)'}}) : null,
-                    e('span', {key: 'n'}, meetingLabel(meeting)),
-                ]),
-                e('div', {key: 'm', className: 'hw-row-meta', style: {marginTop: 4}}, [
-                    meetingLive ? e('span', {key: 'live', className: 'hw-badge hw-badge-ok'}, [
-                        e(Icon, {key: 'i', name: 'microphone-outline', style: {fontSize: 12, marginRight: 3}}), 'Live',
-                    ]) : e('span', {key: 'when'}, [
-                        e(Icon, {key: 'i', name: 'calendar-outline'}), ' ' + formatWhen(meeting.started_at || meeting.created_at),
-                    ]),
-                    st.participants.length ? e('span', {key: 'p', title: st.participants.join(', ')}, [
-                        e(Icon, {key: 'i', name: 'account-multiple-outline'}),
-                        ' ' + st.participants.length + ' in the call',
-                    ]) : null,
-                    (session.capture_status && !finished) ? e('span', {key: 'c'}, [
-                        e(Icon, {key: 'i', name: 'record-circle-outline'}), ' ' + session.capture_status,
-                    ]) : null,
-                ]),
-            ]));
-
-            var hasContent = st.lines.length || (session.suggestions || []).length || (session.insights || []).length;
+            var hasContent = hasContentNow;
 
             if (finished) {
                 parts.push(e(AIFinished, {
-                    key: 'done', session: session, lines: st.lines, ui: ui, setUi: setUi,
+                    key: 'done', session: session, meeting: meeting, lines: st.lines, ui: ui, setUi: setUi,
+                    viewStatus: viewStatus, hasFinal: hasFinal, sections: sections, toggleSection: toggleSection,
                     hasOlder: hasOlder, olderOnService: st.olderOnService, loadOlder: loadOlder,
                     listRef: listRef, onScroll: onScroll,
                 }));
-            } else {
-                // Connection / processing states with nothing to show yet.
-                if (status === 'not_configured') {
-                    parts.push(e(EmptyState, {key: 's', icon: 'power-plug-outline', title: 'AI service not configured'},
-                        'An administrator needs to set the AI service URL or the AI callback secret in System Console › Plugins › Honco Workspace before the assistant can join calls.'));
-                } else if ((status === 'unavailable' || status === 'failed') && !hasContent) {
-                    parts.push(e(EmptyState, {
-                        key: 's', icon: 'alert-circle-outline',
-                        title: status === 'failed' ? 'AI processing failed' : 'AI service unavailable',
-                        action: cfg.service_configured ? e(Button, {
-                            kind: 'secondary', icon: 'refresh', disabled: ui.starting, onClick: startSession,
-                        }, ui.starting ? 'Retrying…' : 'Retry') : null,
-                    }, status === 'failed' ? 'The AI service could not process this meeting.' : aiErrorText(session.error_kind)));
-                } else if (status === 'connecting' && !hasContent) {
-                    parts.push(e('div', {key: 's'}, [
-                        e(Loading, {key: 'l', label: 'Connecting to the AI service'}),
-                        e('div', {key: 'n', className: 'hw-note', style: {paddingTop: 0}}, 'Connecting to the AI service…'),
-                    ]));
-                } else if (status === 'idle' && !hasContent) {
-                    parts.push(e(EmptyState, {
-                        key: 's', icon: 'creation-outline', title: 'Assistant ready',
-                        action: (cfg.service_configured && meetingLive) ? e(Button, {
-                            icon: 'play', disabled: ui.starting, onClick: startSession,
-                        }, ui.starting ? 'Starting…' : 'Start assistant') : null,
-                    }, meetingLive
-                        ? 'The AI service joins when the call is running. Live transcript and suggestions appear here as it sends them.'
-                        : 'The assistant joins automatically when this meeting starts.'));
-                } else {
-                    parts.push(e(AILive, {
-                        key: 'live', session: session, lines: st.lines, ui: ui, setUi: setUi,
-                        hasOlder: hasOlder, olderOnService: st.olderOnService, loadOlder: loadOlder,
-                        listRef: listRef, onScroll: onScroll, status: status, errorKind: session.error_kind,
-                        canRetry: cfg.service_configured, startSession: startSession,
-                    }));
+            } else if (showIntro) {
+                // Nothing to show yet: say what the assistant does, what state
+                // it is in, and the one action that applies.
+                var introIcon = status === 'connecting' ? 'creation-outline' :
+                    (status === 'failed' || status === 'unavailable') ? 'alert-circle-outline' :
+                        (status === 'not_configured' ? 'power-plug-outline' : 'creation-outline');
+                var introTitle = status === 'connecting' ? 'Connecting to Honco AI…' :
+                    status === 'failed' ? 'Meeting insights could not be prepared' :
+                        status === 'unavailable' ? 'AI Assistant is currently unavailable' :
+                            status === 'not_configured' ? 'AI Assistant is not set up yet' : 'Honco AI Assistant';
+                var introText = status === 'connecting' ? 'Live transcript and suggestions appear here as soon as the service joins the call.' :
+                    status === 'failed' ? 'The AI service could not process this meeting. You can try again while the meeting is running.' :
+                        status === 'unavailable' ? aiErrorText(session.error_kind) :
+                            status === 'not_configured' ? 'An administrator needs to connect the Honco AI service in System Console › Plugins › Honco Workspace.' :
+                                'Get real-time meeting assistance, sales suggestions and meeting insights. ' +
+                                (!meetingLive ? 'The assistant becomes available when your meeting is active.' :
+                                    (canStart || canRestart) ? 'Start an AI session while your meeting is active.' :
+                                        'Honco AI joins automatically once it is connected to this meeting.');
+                var introAction = null;
+                if (status === 'connecting') {
+                    introAction = e(Loading, {label: 'Connecting'});
+                } else if ((canStart || canRestart) && meetingLive) {
+                    introAction = e(Button, {icon: 'play', disabled: ui.starting, onClick: startSession},
+                        ui.starting ? 'Starting…' : (canRestart ? 'Start new AI session' : 'Start AI session'));
+                } else if ((status === 'unavailable' || status === 'failed') && cfg.service_configured) {
+                    introAction = e(Button, {kind: 'secondary', icon: 'refresh', disabled: ui.starting, onClick: reconnect},
+                        ui.starting ? 'Retrying…' : 'Retry connection');
                 }
+                parts.push(e('div', {key: 'intro', className: 'hw-ai-intro'}, e(EmptyState, {
+                    icon: introIcon, title: introTitle, action: introAction,
+                }, introText)));
+            } else {
+                parts.push(e(AILive, {
+                    key: 'live', session: session, lines: st.lines, ui: ui, setUi: setUi,
+                    hasOlder: hasOlder, olderOnService: st.olderOnService, loadOlder: loadOlder,
+                    listRef: listRef, onScroll: onScroll, status: status, errorKind: session.error_kind,
+                    canRetry: cfg.service_configured, startSession: startSession, reconnect: reconnect,
+                    freshId: freshState.fresh ? freshState.id : null,
+                }));
             }
             body = e('div', {className: 'hw-list'}, parts);
         }
 
-        return e('div', {className: 'hw hw-ai', 'data-ai-panel': selected || ''}, [
+        return e('div', {className: 'hw hw-ai', 'data-ai-panel': selected || '', 'data-ai-view': viewStatus}, [
             header,
-            wsUp ? null : e('div', {key: 'ws', className: 'hw-error', role: 'status'}, [
+            wsUp ? null : e('div', {key: 'ws', className: 'hw-ai-banner', role: 'status'}, [
                 e(Icon, {key: 'i', name: 'refresh'}),
-                e('span', {key: 't'}, 'Connection lost. Reconnecting…'),
+                e('span', {key: 't'}, 'Connection interrupted. Reconnecting…'),
             ]),
             st.notice ? e('div', {key: 'notice', className: 'hw-note', style: {paddingBottom: 0}}, st.notice) : null,
-            controls,
             body,
         ]);
     }
 
-    // Live view: suggestions first (that is what a person on a call needs
-    // at a glance), insights and topics next, transcript below.
+    // Live view, in the order a person on a call needs it: the suggestion
+    // they can use right now, then what the assistant has noticed, then the
+    // topics, then the transcript. On a phone that is simply the stack.
     function AILive(props) {
         var s = props.session;
         var sugg = s.suggestions || [];
         var latest = sugg.length ? sugg[sugg.length - 1] : null;
         var previous = sugg.slice(0, -1).reverse();
-        var insights = (s.insights || []).slice(-3).reverse();
+        var insights = (s.insights || []).slice(-4).reverse();
         var out = [];
 
         if (props.status === 'unavailable' || props.status === 'failed') {
-            out.push(e('div', {key: 'warn', className: 'hw-error', role: 'alert'}, [
+            out.push(e('div', {key: 'warn', className: 'hw-ai-banner hw-ai-banner-err', role: 'alert'}, [
                 e(Icon, {key: 'i', name: 'alert-circle-outline'}),
-                e('span', {key: 't', style: {flex: 1}}, props.status === 'failed' ? 'AI processing failed. What arrived before is shown below.' : aiErrorText(props.errorKind)),
-                props.canRetry ? e(Button, {key: 'r', kind: 'link', onClick: props.startSession}, 'Retry') : null,
+                e('span', {key: 't', style: {flex: 1}}, props.status === 'failed'
+                    ? 'Meeting insights could not be prepared. What arrived before is shown below.'
+                    : aiErrorText(props.errorKind)),
+                props.canRetry ? e(Button, {key: 'r', kind: 'link', onClick: props.reconnect}, 'Retry') : null,
             ]));
         }
 
-        out.push(e('div', {key: 'sugg', className: 'hw-ai-block'}, [
-            e('div', {key: 'h', className: 'hw-section-title', style: {padding: '0 0 6px'}}, [
-                e(Icon, {key: 'i', name: 'lightbulb-outline', style: {marginRight: 6}}), 'Suggestions',
-                sugg.length ? e('span', {key: 'n', className: 'hw-badge', style: {marginLeft: 8}}, sugg.length) : null,
-            ]),
-            latest ? e(SuggestionCard, {key: 'latest', suggestion: latest, latest: true}) :
-                (props.status === 'live'
-                    ? e('div', {key: 'none', className: 'hw-ai-quiet'}, 'No suggestion yet — they appear here as the AI service sends them.')
-                    : e('div', {key: 'none', className: 'hw-ai-quiet'}, 'Suggestions unavailable.')),
+        out.push(e('div', {key: 'sugg', className: 'hw-ai-block hw-ai-block-primary'}, [
+            latest ? e(SuggestionCard, {key: 'latest', suggestion: latest, latest: true, fresh: props.freshId === latest.id}) :
+                e('div', {key: 'none', className: 'hw-ai-card hw-ai-card-empty'}, [
+                    e('div', {key: 'h', className: 'hw-ai-card-head'}, [
+                        e(Icon, {key: 'i', name: 'lightbulb-outline'}),
+                        e('span', {key: 'k', className: 'hw-ai-card-kind'}, 'Sales suggestion'),
+                    ]),
+                    e('div', {key: 'q', className: 'hw-ai-quiet'}, props.status === 'live'
+                        ? 'Listening for the conversation. Suggestions appear here as Honco AI sends them.'
+                        : 'No suggestions yet.'),
+                ]),
             previous.length ? e('div', {key: 'prev'}, [
                 e(Button, {
                     key: 'b', kind: 'link', icon: props.ui.showAll ? 'chevron-up' : 'chevron-down',
+                    'aria-expanded': props.ui.showAll,
                     onClick: function () {
                         props.setUi(Object.assign({}, props.ui, {showAll: !props.ui.showAll}));
                     },
-                }, (props.ui.showAll ? 'Hide' : 'Show') + ' previous (' + previous.length + ')'),
-                props.ui.showAll ? e('div', {key: 'l', className: 'hw-ai-prev'}, previous.map(function (x) {
+                }, (props.ui.showAll ? 'Hide' : 'Show') + ' previous suggestions (' + previous.length + ')'),
+                props.ui.showAll ? e('div', {key: 'l', className: 'hw-ai-prev hw-fade'}, previous.map(function (x) {
                     return e(SuggestionCard, {key: x.id, suggestion: x});
                 })) : null,
             ]) : null,
@@ -1956,13 +2178,16 @@
 
         if (insights.length || (s.topics || []).length) {
             out.push(e('div', {key: 'ins', className: 'hw-ai-block'}, [
-                insights.length ? e('div', {key: 'h', className: 'hw-section-title', style: {padding: '0 0 6px'}}, [
-                    e(Icon, {key: 'i', name: 'lightning-bolt-outline', style: {marginRight: 6}}), 'Insights',
+                insights.length ? e('div', {key: 'h', className: 'hw-ai-block-title'}, [
+                    e(Icon, {key: 'i', name: 'lightning-bolt-outline'}), 'Insights',
                 ]) : null,
-                insights.map(function (x) {
+                insights.length ? e('div', {key: 'rows', className: 'hw-ai-insights'}, insights.map(function (x) {
                     return e(InsightRow, {key: x.id, insight: x});
-                }),
-                (s.topics || []).length ? e('div', {key: 'topics', className: 'hw-ai-topics'}, (s.topics || []).map(function (t, i) {
+                })) : null,
+                (s.topics || []).length ? e('div', {key: 'th', className: 'hw-ai-block-title', style: {marginTop: insights.length ? 10 : 0}}, [
+                    e(Icon, {key: 'i', name: 'star-outline'}), 'Topics',
+                ]) : null,
+                (s.topics || []).length ? e('div', {key: 'topics', className: 'hw-ai-topics', role: 'list', 'aria-label': 'Detected topics'}, (s.topics || []).map(function (t, i) {
                     return e('span', {key: i, className: 'hw-chip', role: 'listitem'}, t);
                 })) : null,
             ]));
@@ -1972,7 +2197,7 @@
             key: 'tr', title: 'Live transcript', live: props.status === 'live', session: s,
             lines: props.lines, listRef: props.listRef, onScroll: props.onScroll, ui: props.ui, setUi: props.setUi,
             hasOlder: props.hasOlder, olderOnService: props.olderOnService, loadOlder: props.loadOlder,
-            emptyText: props.status === 'live' ? 'Listening… the transcript appears here as the AI service sends it.' : 'Transcript unavailable.',
+            emptyText: props.status === 'live' ? 'Listening… the transcript appears here as Honco AI sends it.' : 'Transcript unavailable.',
         }));
         return e('div', {}, out);
     }
@@ -1980,11 +2205,11 @@
     function TranscriptBlock(props) {
         var s = props.session;
         var lines = props.lines;
-        return e('div', {className: 'hw-ai-block'}, [
-            e('div', {key: 'h', className: 'hw-section-title', style: {padding: '0 0 6px', display: 'flex', alignItems: 'center'}}, [
-                e(Icon, {key: 'i', name: 'message-text-outline', style: {marginRight: 6}}), props.title,
-                props.live ? e('span', {key: 'live', className: 'hw-badge hw-badge-ok', style: {marginLeft: 8}}, 'Live') : null,
-                s.line_count ? e('span', {key: 'n', className: 'hw-spacer', style: {fontWeight: 400, textTransform: 'none', letterSpacing: 0}},
+        return e('div', {className: 'hw-ai-block' + (props.bare ? ' hw-ai-block-bare' : '')}, [
+            props.bare ? null : e('div', {key: 'h', className: 'hw-ai-block-title'}, [
+                e(Icon, {key: 'i', name: 'message-text-outline'}), props.title,
+                props.live ? e('span', {key: 'live', className: 'hw-badge hw-badge-ok hw-ai-tag'}, 'Live') : null,
+                s.line_count ? e('span', {key: 'n', className: 'hw-spacer hw-ai-count'},
                     s.line_count + (s.line_count === 1 ? ' line' : ' lines')) : null,
             ]),
             (props.hasOlder || props.olderOnService) ? e('div', {key: 'older', className: 'hw-ai-older'},
@@ -1994,77 +2219,103 @@
             lines.length ? e('div', {
                 key: 'list', className: 'hw-ai-transcript', ref: props.listRef, onScroll: props.onScroll,
                 role: 'log', 'aria-live': props.live ? 'polite' : 'off', 'aria-label': props.title,
+                tabIndex: 0,
             }, lines.map(function (l) {
                 return e(TranscriptLine, {key: l.seq, line: l});
             })) : (props.live
                 ? e('div', {key: 'sk'}, [e(Loading, {key: 'l', label: 'Waiting for transcript'}), e('div', {key: 'q', className: 'hw-ai-quiet'}, props.emptyText)])
                 : e('div', {key: 'none', className: 'hw-ai-quiet'}, props.emptyText)),
-            (props.live && !props.ui.followLive && lines.length) ? e('div', {key: 'jump', style: {textAlign: 'right', marginTop: 4}},
-                e(Button, {kind: 'link', icon: 'arrow-down', onClick: function () {
+            (!props.ui.followLive && lines.length > 3) ? e('div', {key: 'jump', className: 'hw-ai-jump'},
+                e(Button, {kind: 'secondary', small: true, icon: 'arrow-down', onClick: function () {
                     props.setUi(Object.assign({}, props.ui, {followLive: true}));
+                    var el = props.listRef.current;
+                    if (el) {
+                        el.scrollTop = el.scrollHeight;
+                    }
                 }}, 'Jump to latest')) : null,
         ]);
     }
 
-    // After the call: the service's summary, or an honest "not delivered".
+    // After the call: the service's outputs as a readable report, with the
+    // sections a person reads first open and the rest a click away. Or, just
+    // as clearly, that there is nothing yet.
     function AIFinished(props) {
         var s = props.session;
-        var f = s.final;
+        var f = s.final || {};
+        var sections = props.sections;
         var out = [];
-        if (f && (f.summary || (f.key_points || []).length || (f.action_items || []).length || (f.decisions || []).length ||
-            (f.key_insights || []).length || (f.client_insights || []).length)) {
-            out.push(e('div', {key: 'final', className: 'hw-ai-block hw-fade'}, [
-                f.summary ? e('div', {key: 'sum', className: 'hw-ai-section'}, [
-                    e('div', {key: 'h', className: 'hw-section-title', style: {padding: '0 0 6px'}}, [
-                        e(Icon, {key: 'i', name: 'text-box-outline', style: {marginRight: 6}}), 'Summary',
-                    ]),
-                    e('div', {key: 'b', className: 'hw-ai-summary'}, f.summary),
-                ]) : null,
-                e(ListSection, {key: 'kp', title: 'Key points', icon: 'format-list-bulleted', items: f.key_points}),
-                e(ListSection, {key: 'dec', title: 'Decisions', icon: 'check-circle-outline', items: f.decisions}),
-                e(ListSection, {key: 'act', title: 'Action items', icon: 'check-circle-outline', items: f.action_items}),
-                e(ListSection, {key: 'ki', title: 'Key insights', icon: 'lightning-bolt-outline', items: f.key_insights}),
-                e(ListSection, {key: 'ci', title: 'Client insights', icon: 'account-outline', items: f.client_insights}),
-                (f.topics || []).length ? e('div', {key: 'topics', className: 'hw-ai-section'}, [
-                    e('div', {key: 'h', className: 'hw-section-title', style: {padding: '0 0 6px'}}, [
-                        e(Icon, {key: 'i', name: 'star-outline', style: {marginRight: 6}}), 'Important topics',
-                    ]),
-                    e('div', {key: 'c', className: 'hw-ai-topics'}, f.topics.map(function (t, i) {
-                        return e('span', {key: i, className: 'hw-chip'}, t);
-                    })),
-                ]) : null,
-                e('div', {key: 'meta', className: 'hw-form-note', style: {marginTop: 8, marginBottom: 0}},
-                    'Delivered by the AI service ' + formatWhen(f.received_at) + '.'),
-            ]));
-        } else if (s.status === 'failed') {
-            out.push(e(EmptyState, {key: 'none', icon: 'alert-circle-outline', title: 'AI processing failed'},
-                'The AI service could not produce a summary for this meeting.'));
+
+        var statusRow;
+        if (props.hasFinal) {
+            statusRow = e('span', {key: 'ok', className: 'hw-ai-done-status hw-ai-done-ok'}, [e(Icon, {key: 'i', name: 'check-circle'}), 'Analysis ready']);
+        } else if (props.viewStatus === 'failed' || s.status === 'failed') {
+            statusRow = e('span', {key: 'bad', className: 'hw-ai-done-status hw-ai-done-err'}, [e(Icon, {key: 'i', name: 'alert-circle-outline'}), 'Insights could not be prepared']);
+        } else if (props.viewStatus === 'processing') {
+            statusRow = e('span', {key: 'proc', className: 'hw-ai-done-status'}, [e(Icon, {key: 'i', name: 'refresh'}), 'Preparing meeting insights…']);
         } else {
-            out.push(e(EmptyState, {key: 'none', icon: 'text-box-outline', title: 'Summary unavailable'},
+            statusRow = e('span', {key: 'none', className: 'hw-ai-done-status'}, [e(Icon, {key: 'i', name: 'information-outline'}), 'No AI session for this meeting']);
+        }
+
+        out.push(e('div', {key: 'dh', className: 'hw-ai-done-head'}, [
+            e('div', {key: 't', className: 'hw-ai-done-title'}, 'AI Meeting Summary'),
+            e('div', {key: 'm', className: 'hw-ai-done-meta'}, [
+                e('span', {key: 'k', className: 'hw-ai-done-k'}, 'Meeting'),
+                e('span', {key: 'v'}, meetingLabel(props.meeting)),
+            ]),
+            e('div', {key: 's', className: 'hw-ai-done-meta'}, [
+                e('span', {key: 'k', className: 'hw-ai-done-k'}, 'Status'),
+                statusRow,
+            ]),
+        ]));
+
+        if (props.hasFinal) {
+            f.summary ? out.push(e(Section2, {key: 'summary', icon: 'text-box-outline', title: 'Summary', open: sections.summary, onToggle: props.toggleSection('summary')},
+                e('div', {className: 'hw-ai-summary'}, f.summary))) : null;
+            (f.key_points || []).length ? out.push(e(Section2, {key: 'kp', icon: 'format-list-bulleted', title: 'Key points', count: f.key_points.length, open: sections.key_points, onToggle: props.toggleSection('key_points')},
+                e(BulletList, {items: f.key_points}))) : null;
+            (f.decisions || []).length ? out.push(e(Section2, {key: 'dec', icon: 'check-circle-outline', title: 'Decisions', count: f.decisions.length, open: sections.decisions, onToggle: props.toggleSection('decisions')},
+                e(BulletList, {items: f.decisions}))) : null;
+            (f.action_items || []).length ? out.push(e(Section2, {key: 'act', icon: 'check-circle-outline', title: 'Action items', count: f.action_items.length, open: sections.action_items, onToggle: props.toggleSection('action_items')},
+                e(ActionList, {items: f.action_items}))) : null;
+            (f.key_insights || []).length ? out.push(e(Section2, {key: 'ki', icon: 'lightning-bolt-outline', title: 'Key insights', count: f.key_insights.length, open: sections.key_insights, onToggle: props.toggleSection('key_insights')},
+                e(BulletList, {items: f.key_insights}))) : null;
+            (f.client_insights || []).length ? out.push(e(Section2, {key: 'ci', icon: 'account-outline', title: 'Client insights', count: f.client_insights.length, open: sections.client_insights, onToggle: props.toggleSection('client_insights')},
+                e(LabelledList, {items: f.client_insights}))) : null;
+            (f.topics || []).length ? out.push(e(Section2, {key: 'topics', icon: 'star-outline', title: 'Important topics', count: f.topics.length, open: sections.topics, onToggle: props.toggleSection('topics')},
+                e('div', {className: 'hw-ai-topics', role: 'list', 'aria-label': 'Important topics'}, f.topics.map(function (t, i) {
+                    return e('span', {key: i, className: 'hw-chip', role: 'listitem'}, t);
+                })))) : null;
+            out.push(e('div', {key: 'meta', className: 'hw-ai-delivered'},
+                'Delivered by Honco AI ' + formatWhen(f.received_at) + '.'));
+        } else if (s.status === 'failed') {
+            out.push(e(EmptyState, {key: 'none', icon: 'alert-circle-outline', title: 'Meeting insights could not be prepared'},
+                'The AI service could not produce a summary for this meeting.'));
+        } else if (props.viewStatus === 'processing') {
+            out.push(e('div', {key: 'proc'}, [
+                e(Loading, {key: 'l', label: 'Preparing meeting insights'}),
+                e('div', {key: 'n', className: 'hw-ai-quiet', style: {padding: '0 12px 12px'}},
+                    'Preparing meeting insights… The summary appears here when Honco AI delivers it.'),
+            ]));
+        } else {
+            out.push(e(EmptyState, {key: 'none', icon: 'text-box-outline', title: 'No summary for this meeting'},
                 s.events_received
-                    ? 'The AI service has not delivered a summary for this meeting yet. It appears here when it does.'
-                    : 'The AI service did not join this meeting, so there is no transcript or summary.'));
+                    ? 'Honco AI has not delivered a summary for this meeting yet.'
+                    : 'Honco AI did not join this meeting, so there is no transcript or summary.'));
         }
 
         var hasTranscript = props.lines.length > 0 || s.line_count > 0;
         if (hasTranscript) {
-            out.push(e('div', {key: 'tb', style: {padding: '0 12px 8px'}},
-                e(Button, {
-                    kind: props.ui.showTranscript ? 'ghost' : 'secondary', icon: 'message-text-outline',
-                    onClick: function () {
-                        props.setUi(Object.assign({}, props.ui, {showTranscript: !props.ui.showTranscript, followLive: false}));
-                    },
-                }, props.ui.showTranscript ? 'Hide transcript' : 'View transcript')));
-            if (props.ui.showTranscript) {
-                out.push(e(TranscriptBlock, {
-                    key: 'tr', title: 'Full transcript', live: false, session: s,
-                    lines: props.lines, listRef: props.listRef, onScroll: props.onScroll, ui: props.ui, setUi: props.setUi,
-                    hasOlder: props.hasOlder, olderOnService: props.olderOnService, loadOlder: props.loadOlder,
-                    emptyText: 'Transcript unavailable.',
-                }));
-            }
+            out.push(e(Section2, {
+                key: 'tr', icon: 'message-text-outline', title: 'Transcript', count: s.line_count || props.lines.length,
+                open: sections.transcript, onToggle: props.toggleSection('transcript'),
+            }, e(TranscriptBlock, {
+                title: 'Transcript', live: false, session: s, bare: true,
+                lines: props.lines, listRef: props.listRef, onScroll: props.onScroll, ui: props.ui, setUi: props.setUi,
+                hasOlder: props.hasOlder, olderOnService: props.olderOnService, loadOlder: props.loadOlder,
+                emptyText: 'Transcript unavailable.',
+            })));
         }
-        return e('div', {}, out);
+        return e('div', {className: 'hw-ai-done'}, out);
     }
 
     // --- The right-hand sidebar panel: Tasks and Meeting Intelligence ------

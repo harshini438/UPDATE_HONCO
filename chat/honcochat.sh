@@ -76,9 +76,14 @@ export_env() {
 }
 
 pg_up()  { "$PGBIN/pg_ctl" -D "$PGDATA" status >/dev/null 2>&1; }
-running(){ [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; }
-tun_up() { [ -f "$TUNPID" ] && kill -0 "$(cat "$TUNPID")" 2>/dev/null; }
-svc_up() { [ -f "$SVCPID" ] && kill -0 "$(cat "$SVCPID")" 2>/dev/null; }
+# A pid file outlives a WSL/host restart, and the kernel hands pids out
+# again: after one restart meetsvc's old pid belonged to a postgres backend,
+# `kill -0` said "alive", and `start` skipped meetsvc while reporting it up.
+# So a pid only counts if the process wearing it is the one we started.
+pid_is() { [ -f "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null && ps -p "$(cat "$1")" -o args= 2>/dev/null | grep -q -- "$2"; }
+running(){ pid_is "$PIDFILE" honcochat; }
+tun_up() { pid_is "$TUNPID" cloudflared; }
+svc_up() { pid_is "$SVCPID" meetsvc.py; }
 
 start_svc() {
     if svc_up; then echo "meetsvc:   already running (pid $(cat "$SVCPID"))"; return; fi
