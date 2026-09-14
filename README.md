@@ -22,6 +22,7 @@ rebuild.
 | `summarize/` | Runs on the box where the Claude CLI is authenticated; produces the notes. |
 | `AI_INTEGRATION.md` | The AI Assistant contract: how Honco Chat connects to the **external** AI service that owns voice, live transcript, suggestions and summaries. Honco displays its output; it implements none of it. |
 | `dns/` | The honco.in → Cloudflare migration pack and its verifier. |
+| `website/` | The public product landing page. A separate static site; it only links to the application via `HONCO_CHAT_URL`. Not the app. |
 
 ## Where things run
 

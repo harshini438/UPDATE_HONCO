@@ -1,0 +1,15 @@
+{
+  "name": "honco-chat-website",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Public product landing page for Honco Chat. Separate from the Honco Chat application itself.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^6.3.5"
+  }
+}
