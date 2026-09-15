@@ -184,7 +184,9 @@ func (p *Plugin) handleListChannelMeetings(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	meetings, err := p.store.ListMeetingsForChannel(channelID, 25)
+	// Full rows: the Meetings panel groups these into active, upcoming and
+	// past, which needs the lifecycle columns the short list omits.
+	meetings, err := p.store.ListMeetingsForChannelFull(channelID, 25)
 	if err != nil {
 		p.writeErr(w, http.StatusInternalServerError, "could not list meetings", err)
 		return
@@ -193,12 +195,19 @@ func (p *Plugin) handleListChannelMeetings(w http.ResponseWriter, r *http.Reques
 	// Which of them already have a summary, so the UI can label them
 	// without a request per meeting.
 	statuses := map[string]string{}
+	// Where to join each one, from the same helper the meeting card uses --
+	// the browser never learns the Jitsi base address any other way, and a
+	// second copy of that rule in the frontend would be one to keep in sync.
+	joinURLs := map[string]string{}
 	for _, m := range meetings {
 		if s, serr := p.store.GetSummaryByMeeting(m.ID); serr == nil && s != nil {
 			statuses[m.ID] = s.Status
 		}
+		joinURLs[m.ID] = p.joinURL(m)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"meetings": meetings, "summary_status": statuses})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"meetings": meetings, "summary_status": statuses, "join_urls": joinURLs,
+	})
 }
 
 // --- generation ------------------------------------------------------------

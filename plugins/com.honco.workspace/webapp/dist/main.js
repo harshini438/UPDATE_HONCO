@@ -276,6 +276,7 @@
         '.hw-list{flex:1;min-height:0;overflow-y:auto}',
         '.hw-row{padding:10px 12px;border-bottom:1px solid rgba(var(--center-channel-color-rgb),.08);transition:background .12s}',
         '.hw-row:hover{background:rgba(var(--center-channel-color-rgb),.03)}',
+        '.hw-row-selected{background:rgba(var(--button-bg-rgb),.06);box-shadow:inset 3px 0 0 var(--button-bg)}',
         '.hw-row-title{font-size:13px;font-weight:600;color:var(--center-channel-color);word-break:break-word}',
         '.hw-row-done .hw-row-title{text-decoration:line-through;opacity:.7}',
         '.hw-row-desc{font-size:12px;margin-top:2px;white-space:pre-wrap;word-break:break-word;color:rgba(var(--center-channel-color-rgb),.72)}',
@@ -463,6 +464,15 @@
             'aria-label': props['aria-label'],
             style: props.style,
         };
+        // Passed through only when given, so every existing caller renders
+        // byte for byte as before: a disclosure button needs its expanded
+        // state, and a stable test hook beats guessing at DOM structure.
+        if (props['aria-expanded'] !== undefined) {
+            attrs['aria-expanded'] = props['aria-expanded'];
+        }
+        if (props['data-testid']) {
+            attrs['data-testid'] = props['data-testid'];
+        }
         return e('button', attrs, [
             props.icon ? e(Icon, {key: 'i', name: props.icon}) : null,
             props.children,
@@ -1017,6 +1027,10 @@
     // request. A meeting id here grants nothing.
     var MeetingIntent = {
         meetingId: null,
+        // Set by open() and read by a panel that was still mounting when the
+        // intent was raised -- the same handshake AIIntent uses, and the
+        // reason a card click can open the panel straight onto this tab.
+        wanted: false,
         listeners: [],
 
         // Remembered per channel so a refresh comes back to the meeting the
@@ -1044,6 +1058,14 @@
                 return;
             }
             this.meetingId = meetingId;
+            this.wanted = true;
+            // Open the panel first, exactly as AIIntent.open does. Without
+            // this the card's "View Summary" only worked when the panel
+            // already happened to be open: the intent was raised, no panel
+            // was mounted to hear it, and the click did nothing at all.
+            if (window.HoncoOpenWorkspace) {
+                window.HoncoOpenWorkspace();
+            }
             this.listeners.forEach(function (fn) {
                 try {
                     fn(meetingId);
@@ -1094,6 +1116,123 @@
         return m.topic || m.room_name;
     }
 
+    // --- Creating a meeting from the panel ---------------------------------
+
+    // The form below is a front end for the /meet command that already
+    // exists, not a second way to make a meeting: whatever it collects is
+    // turned into the same command text a person could type, and Mattermost
+    // runs it through the same slash-command path. meetsvc therefore keeps
+    // sole ownership of room names, the Jitsi base address, scheduling and
+    // reminders, and the plugin still registers the meeting exactly once,
+    // through /meetings/register, with its card and lifecycle unchanged.
+    // Nothing here talks to Jitsi or writes honco_meetings.
+    function meetCommandFor(mode, title, whenMs) {
+        // One line, no stray whitespace: the command is a single line of
+        // text, and meetsvc strips it before matching.
+        var topic = (title || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+        if (mode === 'now') {
+            // An empty title is allowed here: bare /meet is the existing
+            // "room for this channel" behaviour, named after the channel.
+            return topic ? '/meet ' + topic : '/meet';
+        }
+        // parse_when understands "in <n> m|h" and "at HH:MM", and the clock
+        // form only ever means today or tomorrow. Minutes-from-now is the
+        // one spelling that can express any future date, so every scheduled
+        // meeting uses it -- and a title is required, because meetsvc reads
+        // the words after the time expression as the topic.
+        var mins = Math.max(1, Math.round((whenMs - Date.now()) / 60000));
+        return '/meet in ' + mins + 'm ' + topic;
+    }
+
+    // Channel members, for the optional participant picker. Read through
+    // Mattermost's own API on the caller's session, so the list can only
+    // ever contain people they are already allowed to see in this channel;
+    // a private channel they are not in returns nothing at all. The picker
+    // is convenience, never authorization -- mentioning someone posts an
+    // ordinary message, which Mattermost authorizes on its own terms.
+    function fetchChannelMembers(channelId) {
+        if (!channelId) {
+            return Promise.resolve([]);
+        }
+        return fetch('/api/v4/users?in_channel=' + encodeURIComponent(channelId) +
+                     '&per_page=200&active=true', {
+            credentials: 'same-origin',
+            headers: {'X-Requested-With': 'XMLHttpRequest'},
+        }).then(function (res) {
+            return res.ok ? res.json() : [];
+        }).then(function (users) {
+            return (users || []).filter(function (u) {
+                return !u.is_bot && u.delete_at === 0;
+            }).sort(function (a, b) {
+                return (a.username || '').localeCompare(b.username || '');
+            });
+        }).catch(function () {
+            return [];
+        });
+    }
+
+    // Run the command the way the composer would. Mattermost resolves the
+    // session, checks the user may post in this channel, and dispatches to
+    // meetsvc; the reply is the same ephemeral text /meet always returns.
+    function runMeetCommand(channelId, teamId, command) {
+        return fetch('/api/v4/commands/execute', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+            body: JSON.stringify({channel_id: channelId, team_id: teamId, command: command}),
+        }).then(function (res) {
+            return res.json().catch(function () {
+                return null;
+            }).then(function (data) {
+                if (!res.ok) {
+                    throw new Error((data && (data.message || data.error)) || 'Could not create the meeting.');
+                }
+                return data;
+            });
+        });
+    }
+
+    // The join link out of the command's own reply, so an invitation can
+    // carry it. Best effort: if the reply ever changes shape the invitation
+    // simply goes out without the link rather than with a wrong one.
+    function joinURLFromReply(data) {
+        var text = (data && (data.text || data.message)) || '';
+        var m = /https?:\/\/[^\s)<>`"']+/.exec(text);
+        return m ? m[0] : '';
+    }
+
+    // "Participants" means: tell these people, in the channel the meeting
+    // belongs to. Honco has no invitee record and no per-user meeting
+    // notification, so this posts the one thing that genuinely reaches
+    // them -- an @-mention, which Mattermost notifies on exactly as it
+    // does for any other message. Nothing is stored against the meeting.
+    function mentionParticipants(channelId, users, topic, whenLabel, joinUrl) {
+        if (!users || !users.length) {
+            return Promise.resolve(null);
+        }
+        var names = users.map(function (u) {
+            return '@' + u.username;
+        }).join(' ');
+        var message = names + ' — you are invited to **' + topic + '** (' + whenLabel + ').';
+        if (joinUrl) {
+            message += '\n' + joinUrl;
+        }
+        return fetch('/api/v4/posts', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+            body: JSON.stringify({channel_id: channelId, message: message}),
+        }).then(function (res) {
+            // A failed invitation must not read as a failed meeting: the
+            // meeting exists either way, and the caller says so.
+            return res.ok ? res.json().catch(function () {
+                return null;
+            }) : null;
+        }).catch(function () {
+            return null;
+        });
+    }
+
     function formatWhen(ms) {
         if (!ms) {
             return '';
@@ -1142,10 +1281,240 @@
         return e('div', {className: 'hw-note'}, props.children);
     }
 
-    function MeetingPanel() {
-        var s0 = React.useState({channelId: null, meetings: [], statuses: {}, loading: true, error: null});
+    // Two decimal-padded helpers for the date/time inputs' value format.
+    function pad2(n) {
+        return (n < 10 ? '0' : '') + n;
+    }
+
+    function defaultMeetingWhen() {
+        // Default to the next quarter hour, which is what someone booking a
+        // meeting almost always wants and saves them setting two fields.
+        var d = new Date(Date.now() + 15 * 60000);
+        d.setSeconds(0, 0);
+        d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15);
+        return {
+            date: d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()),
+            time: pad2(d.getHours()) + ':' + pad2(d.getMinutes()),
+        };
+    }
+
+    // Local date+time strings -> epoch ms, or 0 if either is missing or the
+    // pair does not parse. Built field by field rather than by parsing a
+    // combined string, which browsers disagree about.
+    function whenMillis(dateStr, timeStr) {
+        var d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr || '');
+        var t = /^(\d{2}):(\d{2})$/.exec(timeStr || '');
+        if (!d || !t) {
+            return 0;
+        }
+        var ms = new Date(Number(d[1]), Number(d[2]) - 1, Number(d[3]),
+            Number(t[1]), Number(t[2]), 0, 0).getTime();
+        return isNaN(ms) ? 0 : ms;
+    }
+
+    // The "+ New Meeting" form. Start now or schedule for later; both ends
+    // go through meetCommandFor -> /meet, so this component owns no meeting
+    // state of its own and nothing here can drift from the command.
+    function MeetingCreator(props) {
+        var initial = defaultMeetingWhen();
+        var f0 = React.useState({
+            mode: 'now', title: '', date: initial.date, time: initial.time, participants: [],
+        });
+        var form = f0[0];
+        var setForm = f0[1];
+
+        var s0 = React.useState({saving: false, error: null});
         var state = s0[0];
         var setState = s0[1];
+
+        var m0 = React.useState([]);
+        var members = m0[0];
+        var setMembers = m0[1];
+
+        React.useEffect(function () {
+            var live = true;
+            fetchChannelMembers(props.channelId).then(function (list) {
+                if (live) {
+                    setMembers(list);
+                }
+            });
+            return function () {
+                live = false;
+            };
+        }, [props.channelId]);
+
+        function set(key, value) {
+            setForm(function (prev) {
+                var next = {};
+                Object.keys(prev).forEach(function (k) {
+                    next[k] = prev[k];
+                });
+                next[key] = value;
+                return next;
+            });
+        }
+
+        var scheduled = form.mode === 'later';
+        var whenMs = scheduled ? whenMillis(form.date, form.time) : 0;
+        var titled = form.title.trim().length > 0;
+        // A scheduled meeting needs a title: meetsvc reads the words after
+        // the time expression as the topic, so "in 30m" with nothing after
+        // it would be read as a meeting called "in 30m", starting now.
+        var ready = !state.saving && (scheduled ? (titled && whenMs > Date.now()) : true);
+
+        function submit(ev) {
+            ev.preventDefault();
+            if (!ready) {
+                return;
+            }
+            setState({saving: true, error: null});
+            var topic = form.title.trim() || 'this channel’s meeting';
+            var whenLabel = scheduled ? formatWhen(whenMs) : 'starting now';
+            var chosen = members.filter(function (u) {
+                return form.participants.indexOf(u.id) >= 0;
+            });
+
+            runMeetCommand(props.channelId, props.teamId, meetCommandFor(form.mode, form.title, whenMs))
+                .then(function (data) {
+                    return mentionParticipants(props.channelId, chosen, topic, whenLabel,
+                        joinURLFromReply(data));
+                })
+                .then(function () {
+                    setState({saving: false, error: null});
+                    props.onCreated();
+                })
+                .catch(function (err) {
+                    setState({saving: false, error: err.message || 'Could not create the meeting.'});
+                });
+        }
+
+        function toggleParticipant(id) {
+            set('participants', form.participants.indexOf(id) >= 0
+                ? form.participants.filter(function (x) {
+                    return x !== id;
+                })
+                : form.participants.concat([id]));
+        }
+
+        return e('form', {onSubmit: submit, className: 'hw-form hw-fade'}, [
+            // Meet now vs schedule: a real choice, made before anything
+            // else, because it decides whether the rest of the form applies.
+            e('div', {key: 'mode', className: 'hw-form-label'}, 'When'),
+            e('div', {key: 'modes', className: 'hw-chips', style: {padding: '0 0 8px'}, role: 'radiogroup', 'aria-label': 'When'}, [
+                {id: 'now', label: 'Meet now'},
+                {id: 'later', label: 'Schedule for later'},
+            ].map(function (opt) {
+                return e('button', {
+                    key: opt.id,
+                    type: 'button',
+                    role: 'radio',
+                    className: 'hw-chip',
+                    'aria-checked': form.mode === opt.id,
+                    'aria-selected': form.mode === opt.id,
+                    'data-meet-mode': opt.id,
+                    onClick: function () {
+                        set('mode', opt.id);
+                    },
+                }, opt.label);
+            })),
+
+            e('div', {key: 'tl', className: 'hw-form-label'}, 'Meeting title'),
+            e('input', {
+                key: 'title',
+                className: 'hw-input',
+                placeholder: scheduled ? 'Sprint review' : 'Optional — defaults to this channel',
+                'aria-label': 'Meeting title',
+                value: form.title,
+                maxLength: 120,
+                onChange: function (ev) {
+                    set('title', ev.target.value);
+                },
+            }),
+
+            scheduled ? e('div', {key: 'dl', className: 'hw-form-label'}, 'Date and time') : null,
+            scheduled ? e('div', {key: 'dt', className: 'hw-actions', style: {marginBottom: 6}}, [
+                e('input', {
+                    key: 'date',
+                    className: 'hw-input',
+                    type: 'date',
+                    'aria-label': 'Date',
+                    style: {flex: '1 1 130px', marginBottom: 0},
+                    value: form.date,
+                    onChange: function (ev) {
+                        set('date', ev.target.value);
+                    },
+                }),
+                e('input', {
+                    key: 'time',
+                    className: 'hw-input',
+                    type: 'time',
+                    'aria-label': 'Time',
+                    style: {flex: '1 1 100px', marginBottom: 0},
+                    value: form.time,
+                    onChange: function (ev) {
+                        set('time', ev.target.value);
+                    },
+                }),
+            ]) : null,
+            (scheduled && whenMs > 0 && whenMs <= Date.now()) ? e('div', {
+                key: 'past', className: 'hw-form-note', style: {color: 'var(--error-text)'},
+            }, 'Pick a time in the future.') : null,
+
+            e('div', {key: 'pl', className: 'hw-form-label'},
+                'Participants (optional)' + (form.participants.length ? ' · ' + form.participants.length + ' selected' : '')),
+            e('div', {key: 'pnote', className: 'hw-form-note'},
+                'Mentions them in this channel so they are notified. Honco does not keep an invite list.'),
+            members.length ? e('div', {
+                key: 'people',
+                className: 'hw-chips',
+                style: {padding: '0 0 8px', maxHeight: 96, overflowY: 'auto'},
+            }, members.map(function (u) {
+                var on = form.participants.indexOf(u.id) >= 0;
+                return e('button', {
+                    key: u.id,
+                    type: 'button',
+                    className: 'hw-chip',
+                    'aria-pressed': on,
+                    'aria-selected': on,
+                    'data-participant': u.id,
+                    onClick: function () {
+                        toggleParticipant(u.id);
+                    },
+                }, '@' + u.username);
+            })) : e('div', {key: 'nopeople', className: 'hw-form-note'}, 'No other members to invite here.'),
+
+            e('div', {key: 'rl', className: 'hw-form-label'}, 'Reminder'),
+            e('div', {key: 'rnote', className: 'hw-form-note'}, scheduled
+                ? 'A reminder is posted in this channel when the meeting starts. Honco Meet sends one reminder, at the meeting time; earlier reminders are not supported.'
+                : 'Not applicable — the meeting starts immediately.'),
+
+            state.error ? e('div', {
+                key: 'err',
+                role: 'alert',
+                style: {color: 'var(--error-text)', fontSize: 12, marginBottom: 6},
+            }, state.error) : null,
+
+            e('div', {key: 'actions', className: 'hw-actions'}, [
+                e(Button, {
+                    key: 'create',
+                    type: 'submit',
+                    icon: scheduled ? 'calendar-outline' : 'video-outline',
+                    disabled: !ready,
+                }, state.saving ? 'Creating…' : (scheduled ? 'Create Meeting' : 'Start meeting')),
+                e(Button, {key: 'cancel', kind: 'ghost', onClick: props.onCancel}, 'Cancel'),
+            ]),
+        ]);
+    }
+
+    function MeetingPanel() {
+        var s0 = React.useState({channelId: null, meetings: [], statuses: {}, joinUrls: {}, loading: true, error: null});
+        var state = s0[0];
+        var setState = s0[1];
+
+        // Whether the "+ New Meeting" form is open.
+        var c0 = React.useState(false);
+        var creating = c0[0];
+        var setCreating = c0[1];
 
         var s1 = React.useState({id: null, summary: null, loading: false, error: null, generating: false});
         var sel = s1[0];
@@ -1157,11 +1526,21 @@
 
         // The channel comes from the webapp's own store, so the panel
         // always follows whichever channel the user is actually reading.
+        // The team goes with it: a slash command is executed against both,
+        // and the channel's own team is the right one even when the user
+        // reached this channel from somewhere else.
         var channelId = null;
+        var teamId = null;
         try {
-            channelId = window.store ? window.store.getState().entities.channels.currentChannelId : null;
+            var mstate = window.store ? window.store.getState() : null;
+            if (mstate) {
+                channelId = mstate.entities.channels.currentChannelId;
+                var mch = mstate.entities.channels.channels[channelId];
+                teamId = (mch && mch.team_id) || mstate.entities.teams.currentTeamId;
+            }
         } catch (err) {
             channelId = null;
+            teamId = null;
         }
 
         // A card asked for a specific meeting: select it, whether the
@@ -1188,23 +1567,51 @@
             setState(function (p) {
                 return {channelId: channelId, meetings: p.meetings, statuses: p.statuses, loading: true, error: null};
             });
-            requestStatus('GET', '/channels/' + encodeURIComponent(channelId) + '/meetings').then(function (res) {
+            loadMeetings(channelId);
+        }, [channelId]);
+
+        // A card changing anywhere in this channel -- a meeting created
+        // here or from the message box, one going live, one ending, a
+        // recording arriving -- is already broadcast for the card itself.
+        // The list listens to the same event rather than polling.
+        React.useEffect(function () {
+            var handler = function (msg) {
+                var d = msg && msg.data;
+                if (d && d.channel_id === channelId) {
+                    loadMeetings(channelId);
+                }
+            };
+            window.HoncoMeetingBus.push(handler);
+            return function () {
+                var i = window.HoncoMeetingBus.indexOf(handler);
+                if (i >= 0) {
+                    window.HoncoMeetingBus.splice(i, 1);
+                }
+            };
+        }, [channelId]);
+
+        function loadMeetings(chId) {
+            if (!chId) {
+                return Promise.resolve();
+            }
+            return requestStatus('GET', '/channels/' + encodeURIComponent(chId) + '/meetings').then(function (res) {
                 if (!res.ok) {
-                    setState({channelId: channelId, meetings: [], statuses: {}, loading: false,
+                    setState({channelId: chId, meetings: [], statuses: {}, joinUrls: {}, loading: false,
                         error: res.status === 404 ? null : 'Could not load meetings.'});
                     return;
                 }
                 setState({
-                    channelId: channelId,
+                    channelId: chId,
                     meetings: (res.data && res.data.meetings) || [],
                     statuses: (res.data && res.data.summary_status) || {},
+                    joinUrls: (res.data && res.data.join_urls) || {},
                     loading: false,
                     error: null,
                 });
             }).catch(function () {
-                setState({channelId: channelId, meetings: [], statuses: {}, loading: false, error: 'Could not load meetings.'});
+                setState({channelId: chId, meetings: [], statuses: {}, joinUrls: {}, loading: false, error: 'Could not load meetings.'});
             });
-        }, [channelId]);
+        }
 
         function loadSummary(meetingId) {
             // Remembered so a refresh returns to the same meeting.
@@ -1384,7 +1791,119 @@
             ]);
         }
 
+        // Active / Upcoming / Past, from the lifecycle the server already
+        // maintains -- this groups what honco_meetings says, it does not
+        // decide it. A scheduled meeting stays "upcoming" until the poller
+        // sees somebody in the room, which is when it becomes active.
+        var groups = {active: [], upcoming: [], past: []};
+        state.meetings.forEach(function (m) {
+            if (m.status === 'active') {
+                groups.active.push(m);
+            } else if (m.status === 'scheduled') {
+                groups.upcoming.push(m);
+            } else {
+                groups.past.push(m);
+            }
+        });
+        groups.upcoming.sort(function (a, b) {
+            return (a.scheduled_at || 0) - (b.scheduled_at || 0);
+        });
+
+        function meetingRow(m) {
+            var join = state.joinUrls[m.id];
+            var ready = state.statuses[m.id] === 'ready';
+            var when = m.status === 'scheduled'
+                ? formatWhen(m.scheduled_at)
+                : formatWhen(m.started_at || m.created_at);
+            return e('div', {
+                key: m.id,
+                className: 'hw-row' + (sel.id === m.id ? ' hw-row-selected' : ''),
+                'data-meeting-id': m.id,
+                style: {display: 'flex', alignItems: 'center', gap: 8},
+            }, [
+                e('button', {
+                    key: 'pick',
+                    type: 'button',
+                    className: 'hw-btn-link',
+                    style: {flex: 1, minWidth: 0, textAlign: 'left', whiteSpace: 'normal'},
+                    'aria-label': meetingLabel(m) + ' — ' + when + (ready ? ' — summary ready' : ''),
+                    onClick: function () {
+                        loadSummary(m.id);
+                    },
+                }, [
+                    e('span', {key: 't', className: 'hw-row-title', style: {display: 'block'}}, meetingLabel(m)),
+                    e('span', {key: 'w', className: 'hw-row-meta', style: {display: 'block', marginTop: 2}},
+                        when + (m.status === 'active' && m.participant_count
+                            ? ' · ' + m.participant_count + (m.participant_count === 1 ? ' participant' : ' participants')
+                            : '') + (ready ? ' · summary ✓' : '')),
+                ]),
+                (join && m.status !== 'ended') ? e('a', {
+                    key: 'join',
+                    className: 'hw-btn hw-btn-sm',
+                    href: join,
+                    target: '_blank',
+                    rel: 'noopener noreferrer',
+                    'data-meeting-join': m.id,
+                }, 'Join') : null,
+            ]);
+        }
+
+        function group(key, title, list, limit) {
+            if (!list.length) {
+                return null;
+            }
+            var shown = limit ? list.slice(0, limit) : list;
+            return e('div', {key: key, 'data-meeting-group': key}, [
+                e('div', {key: 'h', className: 'hw-section-title'}, title + ' · ' + list.length),
+            ].concat(shown.map(meetingRow)).concat([
+                list.length > shown.length ? e('div', {
+                    key: 'more', className: 'hw-form-note', style: {padding: '4px 16px 8px'},
+                }, list.length - shown.length + ' older, in the picker below') : null,
+            ]));
+        }
+
         return e('div', {className: 'hw'}, [
+            e(Toolbar, {key: 'bar', icon: 'video-outline', title: 'Meetings'}, e(Button, {
+                small: true,
+                icon: 'plus',
+                'data-testid': 'new-meeting',
+                'aria-expanded': creating,
+                // A meeting belongs to a channel: with none open there is
+                // nothing to create it in, and the command would only fail.
+                disabled: !channelId,
+                title: channelId ? undefined : 'Open a channel to create a meeting',
+                onClick: function () {
+                    setCreating(!creating);
+                },
+            }, creating ? 'Close' : 'New Meeting')),
+
+            creating ? e(MeetingCreator, {
+                key: 'creator',
+                channelId: channelId,
+                teamId: teamId,
+                onCancel: function () {
+                    setCreating(false);
+                },
+                onCreated: function () {
+                    // The card arrives over the WebSocket too, but the panel
+                    // should not look empty for the round trip.
+                    setCreating(false);
+                    loadMeetings(channelId);
+                },
+            }) : null,
+
+            state.loading ? e(Loading, {key: 'load', label: 'Loading meetings'}) : null,
+            state.error ? e(ErrorNote, {key: 'lerr'}, state.error) : null,
+            (!state.loading && !state.meetings.length && !creating) ? e(EmptyState, {
+                key: 'none', icon: 'video-outline', title: 'No meetings in this channel yet',
+            }, 'Use “New Meeting” above, or type /meet in the message box.') : null,
+
+            e('div', {key: 'groups'}, [
+                group('active', 'Active', groups.active),
+                group('upcoming', 'Upcoming', groups.upcoming),
+                group('past', 'Past', groups.past, 5),
+            ]),
+
             e(Toolbar, {key: 'picker', icon: 'text-box-outline', title: 'Meeting Intelligence'}, e('select', {
                 value: sel.id || '',
                 className: 'hw-select',
@@ -3403,6 +3922,11 @@
         } catch (err) {
             initialTab = 'tasks';
         }
+        // Someone pressed "View Summary" on a card while the panel was
+        // closed: land on the tab that answers that click, not on Tasks.
+        if (MeetingIntent.wanted) {
+            initialTab = 'meetings';
+        }
         // Someone pressed "AI Assistant" on a card or in the App Bar while
         // this panel was closed: that is a direct request, and it wins over
         // whatever tab the channel was last left on.
@@ -3433,9 +3957,19 @@
         // Opening a summary from a card should land on the right tab, not
         // leave the user looking at Tasks wondering what happened.
         React.useEffect(function () {
-            return MeetingIntent.subscribe(function () {
+            var stop = MeetingIntent.subscribe(function () {
+                MeetingIntent.wanted = false;
                 setTab('meetings');
             });
+            // Raised while this panel was closed: the click that opened it
+            // fired its listeners before any of this existed, so the flag
+            // is what survives the gap. MeetingPanel clears the meeting id
+            // once it has selected it.
+            if (MeetingIntent.wanted) {
+                MeetingIntent.wanted = false;
+                setTab('meetings');
+            }
+            return stop;
         }, []);
 
         // A search started from Mattermost's own search box lands here.

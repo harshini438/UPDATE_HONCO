@@ -183,6 +183,37 @@ func (s *Store) ListMeetingsForChannel(channelID string, limit int) ([]*Meeting,
 	return out, rows.Err()
 }
 
+// ListMeetingsForChannelFull is ListMeetingsForChannel with the lifecycle
+// columns, for the Meetings panel: it groups what it lists into active,
+// upcoming and past, which the short column set cannot answer. One query
+// rather than a GetMeeting per row -- the panel loads this every time the
+// tab is opened, and the N+1 the active-meetings handler accepts for a
+// handful of live rows would be 25 round trips here.
+func (s *Store) ListMeetingsForChannelFull(channelID string, limit int) ([]*Meeting, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 25
+	}
+	rows, err := s.db.Query(
+		`SELECT `+meetingColumnsFull+` FROM honco_meetings
+		 WHERE channel_id = $1 ORDER BY created_at DESC LIMIT $2`, channelID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []*Meeting{}
+	for rows.Next() {
+		var m Meeting
+		if err := rows.Scan(&m.ID, &m.RoomName, &m.ChannelID, &m.CreatorID, &m.Topic, &m.CreatedAt,
+			&m.Status, &m.PostID, &m.ScheduledAt, &m.StartedAt, &m.EndedAt,
+			&m.ParticipantCount, &m.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, &m)
+	}
+	return out, rows.Err()
+}
+
 // LatestRecordingEnd returns when the meeting's recording arrived, which
 // is the best available marker for when the meeting actually ended. Zero
 // means no recording, and the caller falls back to a time window.
