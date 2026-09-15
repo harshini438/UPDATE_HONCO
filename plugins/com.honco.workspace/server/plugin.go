@@ -89,6 +89,16 @@ func (p *Plugin) OnActivate() error {
 	// call. Server-side, and only for meetings that are running.
 	go p.runMeetingPoller()
 
+	// /summarize. A failure here is logged rather than fatal: the command
+	// is one surface onto Meeting Intelligence, and losing it should not
+	// take Tasks, Meetings and Support down with it.
+	if err := p.registerSummarizeCommand(); err != nil {
+		p.client.Log.Warn("honco: could not register /summarize", "err", err.Error())
+	}
+	if err := p.registerActionItemsCommand(); err != nil {
+		p.client.Log.Warn("honco: could not register /action-items", "err", err.Error())
+	}
+
 	p.client.Log.Info("Honco Workspace activated", "bot_id", botID)
 	return nil
 }

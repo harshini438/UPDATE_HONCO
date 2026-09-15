@@ -199,14 +199,31 @@ func plural(n int) string {
 // then the conversation itself. Nothing about the requester, no ids, and
 // no channel metadata beyond the meeting's own topic is included.
 func buildTranscript(topic string, msgs []convMessage) string {
-	var b strings.Builder
-	b.WriteString("This is a written team chat conversation from a Honco meeting")
+	intro := "This is a written team chat conversation from a Honco meeting"
 	if topic != "" {
-		b.WriteString(fmt.Sprintf(" about %q", topic))
+		intro += fmt.Sprintf(" about %q", topic)
 	}
-	b.WriteString(". It is typed chat, not an audio transcript.\n\n")
-	b.WriteString("Please include these sections, using these exact headings:\n")
-	b.WriteString("## Summary\n## Key discussion points\n## Decisions\n## Action items\n\n")
+	intro += ". It is typed chat, not an audio transcript."
+	return buildConversationText(intro, standardSectionsAsk, msgs)
+}
+
+// standardSectionsAsk is what Meeting Intelligence and /summarize request.
+// parseSections knows these headings, so changing one without the other
+// would silently drop a section.
+const standardSectionsAsk = "Please include these sections, using these exact headings:\n" +
+	"## Summary\n## Key discussion points\n## Decisions\n## Action items\n"
+
+// buildConversationText is the shared body of every transcript: the
+// conversation in a fixed line format and the character cap. The opening
+// sentence and the ask are the caller's, because the summariser is told
+// both what it is reading and what to produce, and neither description
+// should be applied to another command's output.
+func buildConversationText(intro, ask string, msgs []convMessage) string {
+	var b strings.Builder
+	b.WriteString(intro)
+	b.WriteString("\n\n")
+	b.WriteString(ask)
+	b.WriteString("\n")
 	b.WriteString("---CONVERSATION---\n")
 
 	for _, m := range msgs {

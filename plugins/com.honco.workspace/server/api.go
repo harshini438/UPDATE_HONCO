@@ -130,6 +130,10 @@ func (p *Plugin) newRouter() *mux.Router {
 	// with Mattermost's native search, which this does not replace.
 	api.HandleFunc("/search", p.handleSearch).Methods(http.MethodGet)
 
+	// Files browser. A listing only -- every file is still stored,
+	// served and authorized by Mattermost itself.
+	api.HandleFunc("/files/recent", p.handleRecentFiles).Methods(http.MethodGet)
+
 	// Honco Administration. Both gated on Mattermost's own manage_system
 	// permission -- the same one that gates the System Console.
 	api.HandleFunc("/admin/overview", p.handleAdminOverview).Methods(http.MethodGet)

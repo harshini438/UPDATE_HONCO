@@ -283,6 +283,17 @@
         '.hw-row-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin-top:6px;font-size:11px;color:rgba(var(--center-channel-color-rgb),.64)}',
         '.hw-row-meta .icon{font-size:13px;line-height:1;vertical-align:-1px}',
         '.hw-row-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}',
+        // Files. The row is a three-part flex (icon, body, action) that
+        // wraps on a narrow panel rather than pushing the Download button
+        // off the edge.
+        '.hw-file-row{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}',
+        '.hw-row-body{flex:1 1 180px;min-width:0}',
+        '.hw-file-icon{flex:0 0 auto;margin-top:1px;color:rgba(var(--center-channel-color-rgb),.55)}',
+        '.hw-file-icon .icon{font-size:18px;line-height:1}',
+        '.hw-file-name{display:block;text-decoration:none;color:var(--link-color);overflow-wrap:anywhere}',
+        '.hw-file-name:hover{text-decoration:underline}',
+        '.hw-file-row .hw-btn{flex:0 0 auto}',
+        '.hw-more{padding:10px 12px;text-align:center}',
         '.hw-hit{display:block;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid rgba(var(--center-channel-color-rgb),.08);padding:9px 16px;cursor:pointer;font:inherit;color:inherit;transition:background .12s}',
         '.hw-hit:hover{background:rgba(var(--center-channel-color-rgb),.04)}',
         '.hw-chips{display:flex;flex-wrap:wrap;gap:4px;padding:0 16px 10px}',
@@ -3647,6 +3658,194 @@
         ]);
     }
 
+    // --- Files -------------------------------------------------------------
+
+    // The Files browser. A listing only: every file here is stored and
+    // served by Mattermost, and the links below are its own
+    // /api/v4/files/{id} routes, which it authorizes again on click. The
+    // server already filtered to channels this user belongs to, so there
+    // is nothing for this component to hide.
+
+    var FILE_KIND_ICON = {
+        image: 'image-outline',
+        video: 'play',
+        audio: 'microphone',
+        pdf: 'file-document-outline',
+        document: 'file-document-outline',
+        spreadsheet: 'file-document-outline',
+        presentation: 'file-document-outline',
+        archive: 'folder-outline',
+        code: 'code-tags',
+        file: 'paperclip',
+    };
+
+    var FILE_KINDS = [
+        {id: 'all', label: 'All'},
+        {id: 'image', label: 'Images'},
+        {id: 'pdf', label: 'PDFs'},
+        {id: 'document', label: 'Documents'},
+        {id: 'video', label: 'Video'},
+        {id: 'archive', label: 'Archives'},
+    ];
+
+    // A channel with no display name is a DM or group message; Mattermost
+    // composes those names from their members in the client. Rather than
+    // guess at one, say what it is.
+    function fileChannelLabel(f) {
+        if (f.channel_name) {
+            return f.channel_name;
+        }
+        if (f.channel_type === 'D') {
+            return 'Direct message';
+        }
+        if (f.channel_type === 'G') {
+            return 'Group message';
+        }
+        return 'Channel';
+    }
+
+    function FileRow(props) {
+        var f = props.file;
+        var href = '/api/v4/files/' + encodeURIComponent(f.id);
+        var meta = [
+            humanBytes(f.size),
+            f.uploader ? '@' + f.uploader : null,
+            fileChannelLabel(f),
+            formatWhen(f.created_at),
+        ].filter(Boolean).join(' · ');
+
+        return e('div', {className: 'hw-row hw-file-row', 'data-file-id': f.id, 'data-file-kind': f.kind}, [
+            e('div', {key: 'ic', className: 'hw-file-icon'},
+                e(Icon, {name: FILE_KIND_ICON[f.kind] || FILE_KIND_ICON.file})),
+            e('div', {key: 'body', className: 'hw-row-body'}, [
+                e('a', {
+                    key: 'name',
+                    className: 'hw-row-title hw-file-name',
+                    href: href,
+                    target: '_blank',
+                    rel: 'noopener noreferrer',
+                    title: f.name,
+                }, f.name || '(untitled)'),
+                e('div', {key: 'meta', className: 'hw-row-meta'}, meta),
+            ]),
+            e('a', {
+                key: 'dl',
+                className: 'hw-btn hw-btn-secondary hw-btn-sm',
+                href: href + '?download=1',
+                target: '_blank',
+                rel: 'noopener noreferrer',
+                'aria-label': 'Download ' + (f.name || 'file'),
+                'data-file-download': f.id,
+            }, [e(Icon, {key: 'i', name: 'download'}), 'Download']),
+        ]);
+    }
+
+    function FilesPanel() {
+        var s0 = React.useState({files: [], hasMore: false, loading: true, error: null});
+        var state = s0[0];
+        var setState = s0[1];
+        var k0 = React.useState('all');
+        var kind = k0[0];
+        var setKind = k0[1];
+
+        var PAGE = 25;
+
+        var load = React.useCallback(function (offset, append) {
+            if (!append) {
+                setState(function (prev) {
+                    return {files: prev.files, hasMore: prev.hasMore, loading: true, error: null};
+                });
+            }
+            request('GET', '/files/recent?limit=' + PAGE + '&offset=' + offset)
+                .then(function (data) {
+                    var got = (data && data.files) || [];
+                    setState(function (prev) {
+                        return {
+                            files: append ? prev.files.concat(got) : got,
+                            hasMore: Boolean(data && data.has_more),
+                            loading: false,
+                            error: null,
+                        };
+                    });
+                }).catch(function (err) {
+                    setState(function (prev) {
+                        return {
+                            files: append ? prev.files : [],
+                            hasMore: false,
+                            loading: false,
+                            error: err.message,
+                        };
+                    });
+                });
+        }, []);
+
+        React.useEffect(function () {
+            load(0, false);
+        }, [load]);
+
+        var shown = kind === 'all' ? state.files : state.files.filter(function (f) {
+            return f.kind === kind;
+        });
+
+        var body;
+        if (state.loading && !state.files.length) {
+            body = e(Loading, {label: 'Loading files'});
+        } else if (state.error) {
+            body = e('div', {}, [
+                e(ErrorNote, {key: 'e'}, state.error),
+                e(Button, {
+                    key: 'r', kind: 'secondary', icon: 'refresh', onClick: function () {
+                        load(0, false);
+                    },
+                }, 'Try again'),
+            ]);
+        } else if (!state.files.length) {
+            body = e(EmptyState, {icon: 'paperclip', title: 'No files yet'},
+                'Files shared in channels you are a member of will appear here.');
+        } else if (!shown.length) {
+            body = e(EmptyState, {icon: 'paperclip', title: 'No matching files'},
+                'No ' + kind + ' files in the most recent ' + state.files.length + '.');
+        } else {
+            body = shown.map(function (f) {
+                return e(FileRow, {key: f.id, file: f});
+            });
+        }
+
+        return e('div', {className: 'hw hw-files'}, [
+            e(Toolbar, {key: 'bar', icon: 'paperclip', title: 'Files'}, [
+                e('select', {
+                    key: 'kind',
+                    className: 'hw-select',
+                    'aria-label': 'Filter files by type',
+                    value: kind,
+                    onChange: function (ev) {
+                        setKind(ev.target.value);
+                    },
+                }, FILE_KINDS.map(function (k) {
+                    return e('option', {key: k.id, value: k.id}, k.label);
+                })),
+                e(Button, {
+                    key: 'refresh', kind: 'secondary', icon: 'refresh',
+                    'aria-label': 'Refresh files',
+                    disabled: state.loading,
+                    onClick: function () {
+                        load(0, false);
+                    },
+                }, 'Refresh'),
+            ]),
+            e('div', {key: 'list', className: 'hw-list'}, body),
+            state.hasMore && !state.error ? e('div', {key: 'more', className: 'hw-more'},
+                e(Button, {
+                    kind: 'secondary',
+                    disabled: state.loading,
+                    'data-testid': 'files-load-more',
+                    onClick: function () {
+                        load(state.files.length, true);
+                    },
+                }, state.loading ? 'Loading…' : 'Load more')) : null,
+        ]);
+    }
+
     function AdminPanel() {
         var o = React.useState({data: null, loading: true, error: null});
         var overview = o[0];
@@ -4024,6 +4223,7 @@
                 tabButton('meetings', 'Meeting Intelligence', 'text-box-outline', 'Meetings'),
                 tabButton('ai', 'AI Assistant', 'creation-outline'),
                 tabButton('support', 'Support', 'monitor'),
+                tabButton('files', 'Files', 'paperclip'),
                 tabButton('search', 'Search', 'magnify'),
             ].concat(isAdmin ? [tabButton('admin', 'Admin', 'shield-outline')] : [])),
 
@@ -4032,11 +4232,12 @@
                     (tab === 'ai' ? e(AIPanel) :
                     (tab === 'meetings' ? e(MeetingPanel) :
                         (tab === 'support' ? e(SupportPanel) :
+                        (tab === 'files' ? e(FilesPanel) :
                             (tab === 'search' ? e(SearchPanel, {
                                 onOpenTasks: function () {
                                     setTab('tasks');
                                 },
-                            }) : e(AdminPanel)))))),
+                            }) : e(AdminPanel))))))),
         ]);
     }
 
