@@ -11,3 +11,10 @@ Second document — the learning guide (`docs/parts-learning/lg1..4.md`):
 
     DOC=learning node assemble.js && DOC=learning node render.js   # -> ../HONCO_CHAT_PROJECT_LEARNING_GUIDE.{md,pdf}
     node annotate.js                                                # numbered markers over the real screenshots (images/annot-*.png)
+
+Third document — the button manual (`docs/parts-manual/bm1..4.md`):
+
+    DOC=manual node assemble.js && DOC=manual node render.js   # -> ../HONCO_CHAT_BUTTON_MANUAL.{md,pdf}
+
+Verification behind it: `honco-browser/button-verify{,2,3}.js` click every Honco control in the
+running app and check the effect against the API and the database.

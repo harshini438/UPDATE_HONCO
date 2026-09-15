@@ -8,12 +8,15 @@ const url = require('url');
 
 const DOC = process.env.DOC || 'reference';
 const HTML = path.resolve(__dirname, DOC + '.html');
-const OUT = path.resolve(__dirname, '..', DOC === 'learning' ? 'HONCO_CHAT_PROJECT_LEARNING_GUIDE.pdf' : 'HONCO_CHAT_COMPLETE_DOCUMENTATION.pdf');
-const FOOT = DOC === 'learning' ? 'Honco Chat — Complete Project Learning &amp; Developer Guide' : 'Honco Chat — Complete System Documentation &amp; User Guide';
+const OUTS = {learning: 'HONCO_CHAT_PROJECT_LEARNING_GUIDE.pdf', manual: 'HONCO_CHAT_BUTTON_MANUAL.pdf', reference: 'HONCO_CHAT_COMPLETE_DOCUMENTATION.pdf'};
+const OUT = path.resolve(__dirname, '..', OUTS[DOC] || OUTS.reference);
+const FOOTS = {learning: 'Honco Chat — Complete Project Learning &amp; Developer Guide', manual: 'Honco Chat — Button-by-Button User &amp; Developer Manual', reference: 'Honco Chat — Complete System Documentation &amp; User Guide'};
+const FOOT = FOOTS[DOC] || FOOTS.reference;
+const HEADER_DATE = DOC === 'manual' ? '15 Sep 2026' : '14 Sep 2026';
 const TMP = path.resolve(__dirname, 'pass1.pdf');
 const footer = `<div style="font:8pt 'Segoe UI',Arial,sans-serif;color:#666;width:100%;padding:0 17mm;display:flex;justify-content:space-between;">
   <span>${FOOT}</span><span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span></div>`;
-const header = `<div style="font:8pt 'Segoe UI',Arial,sans-serif;color:#888;width:100%;padding:0 17mm;text-align:right;">v1.0 · 14 Sep 2026 · commit 126acc9</div>`;
+const header = `<div style="font:8pt 'Segoe UI',Arial,sans-serif;color:#888;width:100%;padding:0 17mm;text-align:right;">v1.0 · ${HEADER_DATE} · commit 126acc9</div>`;
 
 async function render(page, out) {
     await page.pdf({path: out, format: 'A4', printBackground: true, preferCSSPageSize: false, displayHeaderFooter: true, headerTemplate: header, footerTemplate: footer,

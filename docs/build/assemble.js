@@ -6,14 +6,84 @@ const {marked} = require('marked');
 
 const DOCS = path.resolve(__dirname, '..');
 const DOC = process.env.DOC || 'reference';
-const CFG = DOC === 'learning'
-    ? {dir: 'parts-learning', files: ['lg1.md', 'lg2.md', 'lg3.md', 'lg4.md'], out: 'HONCO_CHAT_PROJECT_LEARNING_GUIDE', title: 'Honco Chat — Complete Project Learning & Developer Guide'}
-    : {dir: 'parts', files: ['part1.md', 'part2.md', 'part3.md', 'part4.md'], out: 'HONCO_CHAT_COMPLETE_DOCUMENTATION', title: 'Honco Chat — Complete System Documentation & User Guide'};
+const CFGS = {
+    learning: {dir: 'parts-learning', files: ['lg1.md', 'lg2.md', 'lg3.md', 'lg4.md'], out: 'HONCO_CHAT_PROJECT_LEARNING_GUIDE', title: 'Honco Chat — Complete Project Learning & Developer Guide'},
+    manual: {dir: 'parts-manual', files: ['bm1.md', 'bm2.md', 'bm3.md', 'bm4.md'], out: 'HONCO_CHAT_BUTTON_MANUAL', title: 'Honco Chat — Complete Button-by-Button User & Developer Manual'},
+    reference: {dir: 'parts', files: ['part1.md', 'part2.md', 'part3.md', 'part4.md'], out: 'HONCO_CHAT_COMPLETE_DOCUMENTATION', title: 'Honco Chat — Complete System Documentation & User Guide'},
+};
+const CFG = CFGS[DOC] || CFGS.reference;
 const parts = CFG.files.map((f) => fs.readFileSync(path.join(DOCS, CFG.dir, f), 'utf8'));
 let md = parts.join('\n');
 
 // Screenshots: [anchor text that starts a line, image, caption]. Inserted immediately before the anchor.
-const shots = DOC === 'learning' ? [
+const SHOTS_MANUAL = [
+    [
+        "## Table of contents",
+        "annot-workspace.png",
+        "Figure 1 — The running Honco Chat, annotated. ① team menu ② Find channel ③ channel list ④ channel header ⑤ account menu (Profile) ⑥ Honco Workspace icon ⑦ AI Assistant icon ⑧ a meeting card ⑨ message composer."
+    ],
+    [
+        "# 3. Button-by-button manual",
+        "annot-tasks.png",
+        "Figure 2 — Tasks tab, annotated. ① panel tabs ② All statuses ③ Mine ④ New task ⑤ status selector ⑥ Edit ⑦ Delete ⑧ due date / Overdue ⑨ Previous / Next."
+    ],
+    [
+        "### BUTTON: Join Meeting (meeting card)",
+        "bm-card-active.png",
+        "Figure 3 — An active meeting card created during this verification pass: Join Meeting and AI Assistant are offered; View Summary is absent because this meeting has no usable summary."
+    ],
+    [
+        "### BUTTON: Generate summary / Regenerate / Try again",
+        "bm-summary-failed.png",
+        "Figure 4 — Verified today: a forced generation on a meeting with four real messages ended in \"The summarizer is not reachable from this server.\", with Try again offered."
+    ],
+    [
+        "### BUTTON: Start AI session / Start new AI session",
+        "bm-ai-state.png",
+        "Figure 5 — The AI Assistant tab on a live meeting with no AI service configured: status \"Ready\", Reconnect, the meeting selector and the introduction. No Start control is rendered."
+    ],
+    [
+        "### BUTTON: Request Support (opens the form)",
+        "bm-support-verified.png",
+        "Figure 6 — The Support tab after creating a request during the verification pass."
+    ],
+    [
+        "### BUTTON: Search + Enter, and the category chips",
+        "bm-search-verified.png",
+        "Figure 7 — The Search tab: the category chips carry a data hook, and selecting \"Tasks\" produced type=tasks on the wire."
+    ],
+    [
+        "### BUTTON: Admin tab · Refresh",
+        "annot-admin.png",
+        "Figure 8 — The Admin tab, annotated. ① System health (live probes) ② Usage ③ Files ④ Refresh."
+    ],
+    [
+        "### BUTTONS: Change photo · Save photo · Remove photo · Cancel (Profile Photo)",
+        "annot-profile.png",
+        "Figure 9 — Profile Settings, annotated. ① Profile Settings ② Profile Photo section ③ current photo ④ accepted types and size limit ⑤ Change photo ⑥ Save photo ⑦ Cancel."
+    ],
+    [
+        "# 5. Profile & profile photo",
+        "01-login.png",
+        "Figure 10 — The login screen of the running application."
+    ],
+    [
+        "# 10. Jibri / recording",
+        "04-meeting-card.png",
+        "Figure 11 — A meeting card after the meeting ended, as posted by the honco bot."
+    ],
+    [
+        "# 14. Files & attachments",
+        "08b-support-card.png",
+        "Figure 12 — A support card in the channel: requester avatar, status, issue and the assigned agent."
+    ],
+    [
+        "# 17. Admin dashboard",
+        "12-mobile-channel.png",
+        "Figure 13 — Phone width (390 px): the same channel with its cards; the panel is reached from the channel menu."
+    ]
+];
+const shots = DOC === 'manual' ? SHOTS_MANUAL : DOC === 'learning' ? [
     ['## Table of contents', '01-login.png', 'Figure 0 — The login page of the running Honco Chat (the vendor branding is replaced by the Honco wordmark).'],
     ['# 11. Meeting Intelligence', '07-ai-assistant.png', 'Figure 6 — AI Assistant tab for an ended meeting with no session: the honest empty state, Reconnect, meeting selector, AI Meeting Summary block.'],
     ['# 12. AI Assistant', '06b-summary-failed.png', 'Figure 7 — Meeting Intelligence today: the real generation attempt failed because the summarizer host is unreachable; Try again is offered.'],
