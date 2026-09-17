@@ -4108,6 +4108,376 @@
         ]);
     }
 
+    // --- Organization (company) administration -----------------------------
+    //
+    // Capability-driven: rendered only when /me/capabilities reports the
+    // logged-in user is an org admin (or system admin). It is not a separate
+    // login and there is no role switch -- the same account simply sees these
+    // controls in addition to everything else it can do. Every action calls a
+    // server API that re-authorizes from stored membership.
+
+    function orgResolveUsername(username) {
+        var u = String(username || '').trim().replace(/^@/, '');
+        if (!u) {
+            return Promise.reject(new Error('Enter a username'));
+        }
+        return fetch('/api/v4/users/username/' + encodeURIComponent(u), {
+            credentials: 'same-origin', headers: {'X-Requested-With': 'XMLHttpRequest'},
+        }).then(function (res) {
+            if (!res.ok) {
+                throw new Error('No user @' + u);
+            }
+            return res.json();
+        });
+    }
+
+    function OrgDashboard(props) {
+        var d = React.useState({loading: true, data: null, error: null});
+        var st = d[0], set = d[1];
+        var load = React.useCallback(function () {
+            set({loading: true, data: null, error: null});
+            request('GET', '/orgs/' + props.orgId + '/overview').then(function (o) {
+                set({loading: false, data: o, error: null});
+            }).catch(function (err) {
+                set({loading: false, data: null, error: err.message});
+            });
+        }, [props.orgId]);
+        React.useEffect(function () {
+            load();
+        }, [load]);
+        if (st.loading) {
+            return e(Loading, {label: 'Loading dashboard'});
+        }
+        if (st.error) {
+            return e(ErrorNote, {}, st.error);
+        }
+        var o = st.data || {};
+        var tasks = o.tasks || {};
+        var support = o.support || {};
+        return e('div', {className: 'hw-list hw-fade', style: {padding: '12px'}}, [
+            e(AdminSection, {key: 'o', title: 'Overview'}, [
+                e(KeyValue, {key: 'd', label: 'Departments (teams)', value: o.teams}),
+                e(KeyValue, {key: 'm', label: 'Members', value: o.members}),
+                e(KeyValue, {key: 't', label: 'Tasks (total)', value: tasks.total}),
+                e(KeyValue, {key: 'so', label: 'Support (open)', value: support.open}),
+                e(KeyValue, {key: 'stt', label: 'Support (total)', value: support.total}),
+                e(KeyValue, {key: 'ms', label: 'Meeting summaries', value: o.meeting_summaries}),
+            ]),
+            e('div', {key: 'note', className: 'hw-form-note'}, 'Company-wide totals across the departments this organization owns.'),
+        ]);
+    }
+
+    function OrgMembers(props) {
+        var d = React.useState({loading: true, rows: [], error: null});
+        var st = d[0], set = d[1];
+        var a = React.useState('');
+        var addName = a[0], setAddName = a[1];
+        var b = React.useState({busy: false, msg: '', err: ''});
+        var act = b[0], setAct = b[1];
+
+        var load = React.useCallback(function () {
+            set({loading: true, rows: [], error: null});
+            request('GET', '/orgs/' + props.orgId + '/members').then(function (o) {
+                set({loading: false, rows: (o && o.members) || [], error: null});
+            }).catch(function (err) {
+                set({loading: false, rows: [], error: err.message});
+            });
+        }, [props.orgId]);
+        React.useEffect(function () {
+            load();
+        }, [load]);
+
+        function run(promise, okMsg) {
+            setAct({busy: true, msg: '', err: ''});
+            promise.then(function () {
+                setAct({busy: false, msg: okMsg || 'Done', err: ''});
+                load();
+            }).catch(function (err) {
+                setAct({busy: false, msg: '', err: err.message});
+            });
+        }
+        function addMember() {
+            setAct({busy: true, msg: '', err: ''});
+            orgResolveUsername(addName).then(function (u) {
+                return request('POST', '/orgs/' + props.orgId + '/members', {user_id: u.id, role: 'org_member'});
+            }).then(function () {
+                setAddName('');
+                setAct({busy: false, msg: 'Member added', err: ''});
+                load();
+            }).catch(function (err) {
+                setAct({busy: false, msg: '', err: err.message});
+            });
+        }
+
+        if (st.loading) {
+            return e(Loading, {label: 'Loading members'});
+        }
+        if (st.error) {
+            return e(ErrorNote, {}, st.error);
+        }
+        var body = st.rows.map(function (m) {
+            var teams = (m.teams || []).map(function (t) {
+                return e(Badge, {key: t.team_id, tone: t.team_admin ? 'ok' : ''},
+                    t.display_name + (t.team_admin ? ' · admin' : ''));
+            });
+            var isAdmin = m.role === 'org_admin';
+            return e('div', {key: m.user_id, className: 'hw-kv', style: {alignItems: 'center', gap: 8, flexWrap: 'wrap'}}, [
+                e('span', {key: 'n', style: {flex: '1 1 160px', minWidth: 120}}, [
+                    e('strong', {key: 'nm'}, m.name || m.username || m.user_id),
+                    e('span', {key: 'un', style: {opacity: 0.6}}, m.username ? '  @' + m.username : ''),
+                    m.is_guest ? e(Badge, {key: 'g', tone: 'warn'}, 'Guest') : null,
+                    m.support_agent ? e(Badge, {key: 'sa', tone: 'ok'}, 'Support') : null,
+                ]),
+                e('span', {key: 'r'}, e(Badge, {tone: isAdmin ? 'ok' : ''}, isAdmin ? 'Org Admin' : 'Member')),
+                e('span', {key: 't', style: {display: 'flex', gap: 4, flexWrap: 'wrap'}}, teams.length ? teams : e('span', {style: {opacity: 0.5}}, '—')),
+                e('span', {key: 'act', style: {display: 'flex', gap: 4}}, [
+                    isAdmin
+                        ? e(Button, {key: 'dm', small: true, kind: 'ghost', disabled: act.busy,
+                            onClick: function () {
+                                run(request('PATCH', '/orgs/' + props.orgId + '/members/' + m.user_id, {role: 'org_member'}), 'Demoted');
+                            }}, 'Demote')
+                        : e(Button, {key: 'pr', small: true, kind: 'ghost', disabled: act.busy,
+                            onClick: function () {
+                                run(request('PATCH', '/orgs/' + props.orgId + '/members/' + m.user_id, {role: 'org_admin'}), 'Promoted');
+                            }}, 'Make admin'),
+                    e(Button, {key: 'rm', small: true, kind: 'danger-link', disabled: act.busy,
+                        onClick: function () {
+                            run(request('DELETE', '/orgs/' + props.orgId + '/members/' + m.user_id), 'Removed');
+                        }}, 'Remove'),
+                ]),
+            ]);
+        });
+        return e('div', {className: 'hw-list hw-fade', style: {padding: '12px'}}, [
+            e('div', {key: 'add', style: {display: 'flex', gap: 6, marginBottom: 10}}, [
+                e('input', {key: 'i', className: 'hw-input', style: {marginBottom: 0}, placeholder: 'Add member by @username',
+                    value: addName, onChange: function (ev) {
+                        setAddName(ev.target.value);
+                    },
+                    onKeyDown: function (ev) {
+                        if (ev.key === 'Enter') {
+                            addMember();
+                        }
+                    }}),
+                e(Button, {key: 'b', small: true, disabled: act.busy || !addName, onClick: addMember}, 'Add'),
+            ]),
+            act.err ? e(ErrorNote, {key: 'e'}, act.err) : null,
+            act.msg ? e('div', {key: 'm', className: 'hw-form-note'}, act.msg) : null,
+            st.rows.length ? e('div', {key: 'list'}, body) : e(EmptyState, {key: 'empty', icon: 'account-multiple-outline', title: 'No members'}),
+        ]);
+    }
+
+    function OrgTeams(props) {
+        var d = React.useState({loading: true, rows: [], error: null});
+        var st = d[0], set = d[1];
+        var s = React.useState(null);
+        var openTeam = s[0], setOpenTeam = s[1];
+        var c = React.useState('');
+        var newName = c[0], setNewName = c[1];
+        var b = React.useState({busy: false, err: ''});
+        var act = b[0], setAct = b[1];
+
+        var load = React.useCallback(function () {
+            set({loading: true, rows: [], error: null});
+            request('GET', '/orgs/' + props.orgId + '/teams').then(function (o) {
+                set({loading: false, rows: (o && o.teams) || [], error: null});
+            }).catch(function (err) {
+                set({loading: false, rows: [], error: err.message});
+            });
+        }, [props.orgId]);
+        React.useEffect(function () {
+            load();
+        }, [load]);
+
+        function createTeam() {
+            setAct({busy: true, err: ''});
+            request('POST', '/orgs/' + props.orgId + '/teams/create', {display_name: newName}).then(function () {
+                setNewName('');
+                setAct({busy: false, err: ''});
+                load();
+            }).catch(function (err) {
+                setAct({busy: false, err: err.message});
+            });
+        }
+
+        if (openTeam) {
+            return e(OrgTeamMembers, {orgId: props.orgId, team: openTeam, onBack: function () {
+                setOpenTeam(null);
+                load();
+            }});
+        }
+        if (st.loading) {
+            return e(Loading, {label: 'Loading departments'});
+        }
+        if (st.error) {
+            return e(ErrorNote, {}, st.error);
+        }
+        var rows = st.rows.map(function (t) {
+            return e('div', {key: t.team_id, className: 'hw-kv', style: {alignItems: 'center'}}, [
+                e('span', {key: 'n', style: {flex: 1}}, [
+                    e('strong', {key: 'd'}, t.display_name || t.name),
+                    e('span', {key: 'c', style: {opacity: 0.6}}, '  ' + (t.member_count || 0) + ' members'),
+                ]),
+                e(Button, {key: 'o', small: true, kind: 'ghost', onClick: function () {
+                    setOpenTeam(t);
+                }}, 'Manage'),
+            ]);
+        });
+        return e('div', {className: 'hw-list hw-fade', style: {padding: '12px'}}, [
+            e('div', {key: 'new', style: {display: 'flex', gap: 6, marginBottom: 10}}, [
+                e('input', {key: 'i', className: 'hw-input', style: {marginBottom: 0}, placeholder: 'New department name (invite-only)',
+                    value: newName, onChange: function (ev) {
+                        setNewName(ev.target.value);
+                    },
+                    onKeyDown: function (ev) {
+                        if (ev.key === 'Enter') {
+                            createTeam();
+                        }
+                    }}),
+                e(Button, {key: 'b', small: true, disabled: act.busy || !newName, onClick: createTeam}, 'Create'),
+            ]),
+            act.err ? e(ErrorNote, {key: 'e'}, act.err) : null,
+            st.rows.length ? e('div', {key: 'list'}, rows) : e(EmptyState, {key: 'empty', icon: 'account-group-outline', title: 'No departments yet'}),
+        ]);
+    }
+
+    function OrgTeamMembers(props) {
+        var d = React.useState({loading: true, rows: [], error: null});
+        var st = d[0], set = d[1];
+        var b = React.useState({busy: false, err: ''});
+        var act = b[0], setAct = b[1];
+        var load = React.useCallback(function () {
+            set({loading: true, rows: [], error: null});
+            request('GET', '/orgs/' + props.orgId + '/teams/' + props.team.team_id + '/members').then(function (o) {
+                set({loading: false, rows: (o && o.members) || [], error: null});
+            }).catch(function (err) {
+                set({loading: false, rows: [], error: err.message});
+            });
+        }, [props.orgId, props.team]);
+        React.useEffect(function () {
+            load();
+        }, [load]);
+
+        function toggleAdmin(m) {
+            setAct({busy: true, err: ''});
+            var path = '/orgs/' + props.orgId + '/teams/' + props.team.team_id + '/admins/' + m.user_id;
+            request(m.team_admin ? 'DELETE' : 'POST', path).then(function () {
+                setAct({busy: false, err: ''});
+                load();
+            }).catch(function (err) {
+                setAct({busy: false, err: err.message});
+            });
+        }
+        var rows = st.rows.map(function (m) {
+            return e('div', {key: m.user_id, className: 'hw-kv', style: {alignItems: 'center'}}, [
+                e('span', {key: 'n', style: {flex: 1}}, [
+                    e('strong', {key: 'd'}, m.name || m.username),
+                    m.team_admin ? e(Badge, {key: 'a', tone: 'ok'}, 'Team Admin') : null,
+                    m.is_guest ? e(Badge, {key: 'g', tone: 'warn'}, 'Guest') : null,
+                ]),
+                m.is_bot ? null : e(Button, {key: 't', small: true, kind: 'ghost', disabled: act.busy, onClick: function () {
+                    toggleAdmin(m);
+                }}, m.team_admin ? 'Remove admin' : 'Make admin'),
+            ]);
+        });
+        return e('div', {className: 'hw-list hw-fade', style: {padding: '12px'}}, [
+            e(Toolbar, {key: 'bar', icon: 'account-group-outline', title: props.team.display_name || props.team.name},
+                e(Button, {key: 'back', small: true, kind: 'ghost', icon: 'arrow-left', className: 'hw-spacer', onClick: props.onBack}, 'Back')),
+            act.err ? e(ErrorNote, {key: 'e'}, act.err) : null,
+            st.loading ? e(Loading, {key: 'l', label: 'Loading team'}) :
+                (st.rows.length ? e('div', {key: 'list'}, rows) : e(EmptyState, {key: 'empty', title: 'No members'})),
+        ]);
+    }
+
+    function OrgSettings(props) {
+        var d = React.useState({loading: true, org: null, error: null});
+        var st = d[0], set = d[1];
+        var f = React.useState({name: '', display_name: ''});
+        var form = f[0], setForm = f[1];
+        var b = React.useState({busy: false, msg: '', err: ''});
+        var act = b[0], setAct = b[1];
+        var load = React.useCallback(function () {
+            request('GET', '/orgs/' + props.orgId).then(function (o) {
+                set({loading: false, org: o, error: null});
+                setForm({name: o.name || '', display_name: o.display_name || ''});
+            }).catch(function (err) {
+                set({loading: false, org: null, error: err.message});
+            });
+        }, [props.orgId]);
+        React.useEffect(function () {
+            load();
+        }, [load]);
+        function save() {
+            setAct({busy: true, msg: '', err: ''});
+            request('PATCH', '/orgs/' + props.orgId, {name: form.name, display_name: form.display_name}).then(function () {
+                setAct({busy: false, msg: 'Saved', err: ''});
+                load();
+            }).catch(function (err) {
+                setAct({busy: false, msg: '', err: err.message});
+            });
+        }
+        if (st.loading) {
+            return e(Loading, {label: 'Loading settings'});
+        }
+        if (st.error) {
+            return e(ErrorNote, {}, st.error);
+        }
+        var o = st.org || {};
+        return e('div', {className: 'hw-list hw-fade', style: {padding: '12px'}}, [
+            e('label', {key: 'ln', className: 'hw-form-note'}, 'Organization name'),
+            e('input', {key: 'n', className: 'hw-input', value: form.name, onChange: function (ev) {
+                setForm({name: ev.target.value, display_name: form.display_name});
+            }}),
+            e('label', {key: 'ld', className: 'hw-form-note'}, 'Display name'),
+            e('input', {key: 'd', className: 'hw-input', value: form.display_name, onChange: function (ev) {
+                setForm({name: form.name, display_name: ev.target.value});
+            }}),
+            e(KeyValue, {key: 'slug', label: 'Slug (fixed)', value: o.slug}),
+            e(KeyValue, {key: 'status', label: 'Status', value: o.status}),
+            act.err ? e(ErrorNote, {key: 'e'}, act.err) : null,
+            act.msg ? e('div', {key: 'm', className: 'hw-form-note'}, act.msg) : null,
+            e('div', {key: 'save', style: {marginTop: 8}},
+                e(Button, {disabled: act.busy || !form.name, onClick: save}, 'Save changes')),
+        ]);
+    }
+
+    function OrgPanel(props) {
+        var s = React.useState('dashboard');
+        var sub = s[0], setSub = s[1];
+        var caps = props.caps || {};
+        var org = caps.organization || null;
+        if (!org || !caps.is_org_admin) {
+            return e('div', {className: 'hw'}, [
+                e(Toolbar, {key: 'b', icon: 'domain', title: 'Organization'}),
+                e(EmptyState, {key: 'e', icon: 'lock-outline', title: 'No organization administration'},
+                    'You do not administer an organization.'),
+            ]);
+        }
+        function subTab(id, label) {
+            return e('button', {key: id, className: 'hw-tab', role: 'tab', 'aria-selected': sub === id,
+                onClick: function () {
+                    setSub(id);
+                }}, e('span', {}, label));
+        }
+        return e('div', {className: 'hw'}, [
+            e('div', {key: 'head', className: 'hw-bar'},
+                e('span', {key: 't', className: 'hw-bar-title'}, [
+                    e(Icon, {key: 'i', name: 'domain'}),
+                    e('span', {key: 'l'}, org.name),
+                ])),
+            e('div', {key: 'subtabs', role: 'tablist', 'aria-label': 'Organization', className: 'hw-tabs'}, [
+                subTab('dashboard', 'Dashboard'),
+                subTab('members', 'Members'),
+                subTab('teams', 'Teams'),
+                subTab('settings', 'Settings'),
+            ]),
+            e('div', {key: 'body', style: {flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column'}},
+                sub === 'dashboard' ? e(OrgDashboard, {orgId: org.id}) :
+                    (sub === 'members' ? e(OrgMembers, {orgId: org.id, caps: caps}) :
+                        (sub === 'teams' ? e(OrgTeams, {orgId: org.id}) :
+                            e(OrgSettings, {orgId: org.id})))),
+        ]);
+    }
+
     function HoncoPanel() {
         // Open on Meeting Intelligence when this channel has a remembered
         // selection, so a refresh returns the user to the summary they were
@@ -4148,6 +4518,23 @@
         } catch (err) {
             isAdmin = false;
         }
+
+        // The logged-in user's capabilities, from the server. Used only to
+        // decide whether to OFFER the Organization tab -- the server still
+        // authorizes every /orgs call from stored membership, so a browser
+        // that forces this flag gains nothing. This is how one account sees
+        // org-admin controls without a separate login or a role switch.
+        var cp = React.useState(null);
+        var caps = cp[0];
+        var setCaps = cp[1];
+        React.useEffect(function () {
+            request('GET', '/me/capabilities').then(function (d) {
+                setCaps(d);
+            }).catch(function () {
+                setCaps(null);
+            });
+        }, []);
+        var showOrg = Boolean(caps && caps.is_org_admin);
 
         var t = React.useState(initialTab);
         var tab = t[0];
@@ -4225,7 +4612,8 @@
                 tabButton('support', 'Support', 'monitor'),
                 tabButton('files', 'Files', 'paperclip'),
                 tabButton('search', 'Search', 'magnify'),
-            ].concat(isAdmin ? [tabButton('admin', 'Admin', 'shield-outline')] : [])),
+            ].concat(showOrg ? [tabButton('org', 'Organization', 'domain', 'Org')] : [])
+                .concat(isAdmin ? [tabButton('admin', 'Admin', 'shield-outline')] : [])),
 
             e('div', {key: 'panel', style: {flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column'}},
                 tab === 'tasks' ? e(TasksPanel) :
@@ -4237,7 +4625,7 @@
                                 onOpenTasks: function () {
                                     setTab('tasks');
                                 },
-                            }) : e(AdminPanel))))))),
+                            }) : (tab === 'org' ? e(OrgPanel, {caps: caps}) : e(AdminPanel)))))))),
         ]);
     }
 

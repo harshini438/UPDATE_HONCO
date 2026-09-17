@@ -139,6 +139,30 @@ func (p *Plugin) newRouter() *mux.Router {
 	api.HandleFunc("/admin/overview", p.handleAdminOverview).Methods(http.MethodGet)
 	api.HandleFunc("/admin/health", p.handleAdminHealth).Methods(http.MethodGet)
 
+	// Organizations (companies). Authorization is per-request and derived
+	// from stored membership; a non-member sees the same 404 as a
+	// nonexistent org (see organization_api.go).
+	// The logged-in user's full capability set, for capability-driven UI.
+	api.HandleFunc("/me/capabilities", p.handleMyCapabilities).Methods(http.MethodGet)
+
+	api.HandleFunc("/orgs", p.handleCreateOrg).Methods(http.MethodPost)
+	api.HandleFunc("/orgs", p.handleListOrgs).Methods(http.MethodGet)
+	api.HandleFunc("/orgs/mine", p.handleGetMyOrg).Methods(http.MethodGet)
+	api.HandleFunc("/orgs/{org_id}", p.handleGetOrg).Methods(http.MethodGet)
+	api.HandleFunc("/orgs/{org_id}", p.handleUpdateOrg).Methods(http.MethodPatch)
+	api.HandleFunc("/orgs/{org_id}/overview", p.handleOrgOverview).Methods(http.MethodGet)
+	api.HandleFunc("/orgs/{org_id}/teams", p.handleListOrgTeams).Methods(http.MethodGet)
+	api.HandleFunc("/orgs/{org_id}/teams", p.handleMapTeam).Methods(http.MethodPost)
+	api.HandleFunc("/orgs/{org_id}/teams/create", p.handleCreateOrgTeam).Methods(http.MethodPost)
+	api.HandleFunc("/orgs/{org_id}/teams/{team_id}", p.handleUnmapTeam).Methods(http.MethodDelete)
+	api.HandleFunc("/orgs/{org_id}/teams/{team_id}/members", p.handleListOrgTeamMembers).Methods(http.MethodGet)
+	api.HandleFunc("/orgs/{org_id}/teams/{team_id}/admins/{user_id}", p.handleSetTeamAdmin).Methods(http.MethodPost)
+	api.HandleFunc("/orgs/{org_id}/teams/{team_id}/admins/{user_id}", p.handleRemoveTeamAdmin).Methods(http.MethodDelete)
+	api.HandleFunc("/orgs/{org_id}/members", p.handleListOrgMembers).Methods(http.MethodGet)
+	api.HandleFunc("/orgs/{org_id}/members", p.handleAddOrgMember).Methods(http.MethodPost)
+	api.HandleFunc("/orgs/{org_id}/members/{user_id}", p.handleSetOrgMemberRole).Methods(http.MethodPatch)
+	api.HandleFunc("/orgs/{org_id}/members/{user_id}", p.handleRemoveOrgMember).Methods(http.MethodDelete)
+
 	root.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusNotFound, errorBody{Error: "no such endpoint"})
 	})

@@ -25,6 +25,13 @@ type Plugin struct {
 	store  *Store
 	botID  string
 
+	// defaultOrgID is the "Honco" organization every existing team is
+	// mapped into at activation, and the org an as-yet-unmapped team or
+	// user is treated as belonging to during the transition window. Set by
+	// backfillOrganizations; "" only if that backfill could not run, in
+	// which case org resolution falls open.
+	defaultOrgID string
+
 	routerOnce sync.Once
 	router     *mux.Router
 
@@ -76,6 +83,14 @@ func (p *Plugin) OnActivate() error {
 
 	if err := p.store.Migrate(); err != nil {
 		return err
+	}
+
+	// Bring the organization layer to a consistent state: create the
+	// default company, map existing teams into it, and seed the roster.
+	// Non-fatal by design -- a backfill hiccup must not keep the plugin,
+	// and every existing feature, from starting.
+	if err := p.backfillOrganizations(); err != nil {
+		p.client.Log.Warn("honco: organization backfill returned an error", "err", err.Error())
 	}
 
 	// Background due-date reminders. Every send is claimed in the

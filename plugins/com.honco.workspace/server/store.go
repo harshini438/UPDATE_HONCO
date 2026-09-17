@@ -274,6 +274,70 @@ var migrations = []migration{
 				ON honco_support_events (request_id, created_at)`,
 		},
 	},
+	{
+		version: 7,
+		name:    "create_honco_organizations",
+		stmts: []string{
+			// The Organization (Company) layer that sits ABOVE Mattermost
+			// teams. A team is a department; an organization groups several
+			// departments under one company. This is additive: no existing
+			// table is touched, and every existing team-scoped row inherits
+			// its organization through the honco_org_teams mapping, so no
+			// backfill of the business tables is required.
+			`CREATE TABLE IF NOT EXISTS honco_organizations (
+				id           VARCHAR(26)  PRIMARY KEY,
+				slug         VARCHAR(64)  NOT NULL,
+				name         VARCHAR(255) NOT NULL,
+				display_name VARCHAR(255) NOT NULL DEFAULT '',
+				status       VARCHAR(32)  NOT NULL DEFAULT 'active',
+				created_by   VARCHAR(26)  NOT NULL DEFAULT '',
+				created_at   BIGINT       NOT NULL,
+				updated_at   BIGINT       NOT NULL
+			)`,
+			// A slug identifies an organization in a URL and must be unique
+			// across the instance -- the first thing that would collide when
+			// a second company is added.
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_honco_org_slug
+				ON honco_organizations (slug)`,
+
+			// The team -> organization map. A team belongs to EXACTLY ONE
+			// organization: the unique index on team_id is the isolation
+			// invariant the whole security model rests on. Because it is a
+			// separate mapping table, mapping a team into an org changes no
+			// row in honco_tasks/meetings/etc -- they resolve their org
+			// through this join.
+			`CREATE TABLE IF NOT EXISTS honco_org_teams (
+				org_id   VARCHAR(26) NOT NULL,
+				team_id  VARCHAR(26) NOT NULL,
+				added_by VARCHAR(26) NOT NULL DEFAULT '',
+				added_at BIGINT      NOT NULL
+			)`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_honco_org_teams_team
+				ON honco_org_teams (team_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_honco_org_teams_org
+				ON honco_org_teams (org_id)`,
+
+			// The organization roster and role. Membership is modelled as a
+			// (user_id, org_id) pair -- a shape that CAN hold a user in more
+			// than one organization later. For now the store enforces one
+			// active organization per user in code, not with a UNIQUE(user_id)
+			// constraint, so enabling multi-org membership in future needs no
+			// schema change. role is org_admin or org_member.
+			`CREATE TABLE IF NOT EXISTS honco_org_members (
+				org_id     VARCHAR(26) NOT NULL,
+				user_id    VARCHAR(26) NOT NULL,
+				role       VARCHAR(32) NOT NULL DEFAULT 'org_member',
+				status     VARCHAR(32) NOT NULL DEFAULT 'active',
+				added_by   VARCHAR(26) NOT NULL DEFAULT '',
+				added_at   BIGINT      NOT NULL,
+				updated_at BIGINT      NOT NULL
+			)`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_honco_org_members_uidorg
+				ON honco_org_members (user_id, org_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_honco_org_members_org
+				ON honco_org_members (org_id, role)`,
+		},
+	},
 }
 
 // Migrate brings the plugin's own schema up to date.
