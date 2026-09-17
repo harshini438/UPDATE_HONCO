@@ -137,7 +137,16 @@ func (p *Plugin) aiPollSuggestions(m *Meeting, meetingID, sessionID string) {
 		return // co-pilot not enabled for this meeting
 	}
 	sugs, err := p.aiService().Suggestions(sessionID, token)
-	if err != nil || len(sugs) == 0 {
+	if err != nil {
+		// Do not swallow this silently: a decode or transport fault here is
+		// exactly how live suggestions can vanish while everything upstream
+		// looks healthy. redactErr strips the URL (and its token) and the
+		// suggestion body never reaches the log, so no secret or meeting
+		// content is written.
+		p.client.Log.Warn("honco ai: suggestion poll failed", "meeting_id", meetingID, "err", redactErr(err))
+		return
+	}
+	if len(sugs) == 0 {
 		return
 	}
 	events := make([]aiEvent, 0, len(sugs))

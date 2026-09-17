@@ -341,13 +341,17 @@ func (h *httpAIService) StartSession(req AIStartRequest) (*AIStartResponse, erro
 // calls the same field "suggestion" -- the REST endpoint does not). Only the
 // fields Honco renders are decoded.
 type botSuggestion struct {
-	ID        string  `json:"id"`
-	Priority  string  `json:"priority"`
-	Type      string  `json:"type"`
-	Text      string  `json:"text"`
-	Reason    string  `json:"reason"`
-	Status    string  `json:"status"`
-	CreatedAt float64 `json:"created_at"`
+	ID       string `json:"id"`
+	Priority string `json:"priority"`
+	Type     string `json:"type"`
+	Text     string `json:"text"`
+	Reason   string `json:"reason"`
+	Status   string `json:"status"`
+	// The bot serialises created_at as an ISO-8601 string (FastAPI encodes
+	// datetime that way), not an epoch number. Decoding it as float64 fails
+	// the whole array; Honco does not use this field, so it is kept as a
+	// string only so the decode succeeds.
+	CreatedAt string `json:"created_at"`
 }
 
 // Suggestions fetches the live co-pilot suggestions for a meeting. The
