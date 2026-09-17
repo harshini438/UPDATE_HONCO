@@ -58,6 +58,9 @@ type AIStartRequest struct {
 	// Where the service should push events. Sent so the service does not
 	// have to be configured with Honco's address separately.
 	CallbackURL string `json:"callback_url,omitempty"`
+	// The join URL the bot opens in its browser. Required by the bot; set
+	// by ai.go from the same joinURL the meeting card uses.
+	MeetingURL string `json:"meeting_url,omitempty"`
 }
 
 type AIStartResponse struct {
@@ -194,60 +197,285 @@ type httpAIService struct {
 	client   *http.Client
 }
 
-func (h *httpAIService) StartSession(req AIStartRequest) (*AIStartResponse, error) {
-	req.CallbackURL = h.callback
-	var out AIStartResponse
-	if err := h.do(http.MethodPost, "/v1/sessions", req, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
+// The bot's API, as it actually is (app/api/v1/meetings.py in the bot
+// repository, confirmed against its live OpenAPI on 2026-09-16):
+//
+//	POST /api/v1/meetings/              {meeting_url, title, external_meeting_id,
+//	                                     participants, sales} -> {id, status}
+//	POST /api/v1/meetings/{id}/start    -> {status: "starting"}
+//	POST /api/v1/meetings/{id}/stop     -> {status: "stop_requested"}; 409 if not running
+//	GET  /api/v1/meetings/{id}          -> {id, status, ...}
+//	GET  /api/v1/meetings/{id}/health   -> {status, live, ...}
+//	GET  /api/v1/meetings/{id}/transcripts -> [TranscriptSegment]
+//	GET  /api/v1/meetings/{id}/summary  -> MeetingSummaryResponse
+//	GET  /health
+//
+// The bot has no authentication; the bearer header, when a token is
+// configured, is sent and ignored. The bot does NOT push events to Honco,
+// so everything past StartSession is a pull -- see ai_poll.go.
+
+const botAPI = "/api/v1/meetings"
+
+// botCreateRequest is the bot's MeetingCreate schema. Honco sends
+// sales.enabled=false: this integration is the Stage 1 notetaker only, and
+// disabling the co-pilot per meeting keeps the bot from needing a Gemini
+// key for something Honco is not yet consuming.
+type botCreateRequest struct {
+	MeetingURL        string   `json:"meeting_url"`
+	Title             string   `json:"title,omitempty"`
+	ExternalMeetingID string   `json:"external_meeting_id,omitempty"`
+	Participants      []string `json:"participants,omitempty"`
+	Sales             struct {
+		Enabled bool `json:"enabled"`
+	} `json:"sales"`
 }
 
+type botMeeting struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
+type botHealth struct {
+	Status string `json:"status"`
+	Live   bool   `json:"live"`
+}
+
+// botTranscriptSegment is the bot's TranscriptSegment. Only what Honco
+// renders is decoded.
+type botTranscriptSegment struct {
+	Sequence  int64   `json:"sequence"`
+	Text      string  `json:"text"`
+	IsFinal   bool    `json:"is_final"`
+	Speaker   string  `json:"speaker"`
+	StartTime float64 `json:"start_time"`
+	CreatedAt string  `json:"created_at"`
+}
+
+// botSummary is the bot's MeetingSummaryResponse. The list fields are
+// untyped on the bot side (an item may be a string or an object such as
+// {task, owner, due}), so they are decoded as any and rendered by
+// botItemText.
+type botSummary struct {
+	Summary             string `json:"summary"`
+	Participants        []any  `json:"participants"`
+	Decisions           []any  `json:"decisions"`
+	ActionItems         []any  `json:"action_items"`
+	DiscussionPoints    []any  `json:"discussion_points"`
+	UnresolvedQuestions []any  `json:"unresolved_questions"`
+	ModelUsed           string `json:"model_used"`
+}
+
+// mapBotStatus turns the bot's MeetingStatus into Honco's session status.
+// ANALYZING is reported as ended rather than completed: the call is over
+// but the summary is not there yet, and "completed" is what tells the
+// panel to show one.
+func mapBotStatus(s string) string {
+	switch strings.ToUpper(strings.TrimSpace(s)) {
+	case "SCHEDULED", "STARTING":
+		return AIStatusConnecting
+	case "ACTIVE":
+		return AIStatusLive
+	case "STOPPING", "ANALYZING", "CANCELLED":
+		return AIStatusEnded
+	case "COMPLETED":
+		return AIStatusCompleted
+	case "FAILED":
+		return AIStatusFailed
+	}
+	return ""
+}
+
+func (h *httpAIService) StartSession(req AIStartRequest) (*AIStartResponse, error) {
+	if strings.TrimSpace(req.MeetingURL) == "" {
+		// Without a URL there is nothing for the bot to join, and the bot
+		// would answer 422 anyway. Refuse here so the reason is clear.
+		return nil, fmt.Errorf("%w: no meeting URL to join", errAIRefused)
+	}
+	body := botCreateRequest{
+		MeetingURL:        req.MeetingURL,
+		Title:             req.Topic,
+		ExternalMeetingID: req.MeetingID,
+		Participants:      req.Participants,
+	}
+	body.Sales.Enabled = false
+
+	var created botMeeting
+	if err := h.do(http.MethodPost, botAPI+"/", body, &created); err != nil {
+		return nil, err
+	}
+	if !aiSessionIDOK(created.ID) {
+		return nil, fmt.Errorf("%w: unusable meeting id", errAIRefused)
+	}
+	// Creating the record does not start the bot; /start does.
+	if err := h.do(http.MethodPost, botAPI+"/"+url.PathEscape(created.ID)+"/start", nil, nil); err != nil {
+		return nil, err
+	}
+	return &AIStartResponse{SessionID: created.ID, Status: AIStatusConnecting}, nil
+}
+
+// EndSession asks the bot to leave. The bot answers 409 when it is not
+// running -- already stopped, or never started -- which is the state this
+// call wants, so that one refusal is not an error.
 func (h *httpAIService) EndSession(sessionID string) error {
 	if !aiSessionIDOK(sessionID) {
 		return errAIRefused
 	}
-	return h.do(http.MethodPost, "/v1/sessions/"+url.PathEscape(sessionID)+"/end", nil, nil)
+	err := h.do(http.MethodPost, botAPI+"/"+url.PathEscape(sessionID)+"/stop", nil, nil)
+	if err != nil && errors.Is(err, errAIRefused) && strings.Contains(err.Error(), "status 409") {
+		return nil
+	}
+	return err
 }
 
 func (h *httpAIService) SessionStatus(sessionID string) (*AISessionStatus, error) {
 	if !aiSessionIDOK(sessionID) {
 		return nil, errAIRefused
 	}
-	var out AISessionStatus
-	if err := h.do(http.MethodGet, "/v1/sessions/"+url.PathEscape(sessionID), nil, &out); err != nil {
+	var m botMeeting
+	if err := h.do(http.MethodGet, botAPI+"/"+url.PathEscape(sessionID), nil, &m); err != nil {
 		return nil, err
 	}
-	return &out, nil
+	out := &AISessionStatus{SessionID: sessionID, Status: mapBotStatus(m.Status)}
+	// The health route says whether the bot is actually in the call. It is
+	// advisory; a failure here must not turn a known status into an error.
+	var hb botHealth
+	if err := h.do(http.MethodGet, botAPI+"/"+url.PathEscape(sessionID)+"/health", nil, &hb); err == nil {
+		if hb.Live {
+			out.CaptureStatus = "in the call"
+		} else {
+			out.CaptureStatus = "not in the call"
+		}
+	}
+	return out, nil
 }
 
+// Transcript returns the bot's segments as Honco lines. The bot has no
+// paging, so after/limit are applied here: the bot is the source of truth
+// and Honco keeps a window, exactly as with a pushing service.
 func (h *httpAIService) Transcript(sessionID string, after int64, limit int) ([]AITranscriptLine, error) {
 	if !aiSessionIDOK(sessionID) {
 		return nil, errAIRefused
 	}
-	var out struct {
-		Lines []AITranscriptLine `json:"lines"`
-	}
-	path := fmt.Sprintf("/v1/sessions/%s/transcript?after=%d&limit=%d", url.PathEscape(sessionID), after, limit)
-	if err := h.do(http.MethodGet, path, nil, &out); err != nil {
+	var segs []botTranscriptSegment
+	if err := h.do(http.MethodGet, botAPI+"/"+url.PathEscape(sessionID)+"/transcripts", nil, &segs); err != nil {
 		return nil, err
 	}
-	return out.Lines, nil
+	out := make([]AITranscriptLine, 0, len(segs))
+	for _, sg := range segs {
+		if sg.Sequence <= after || strings.TrimSpace(sg.Text) == "" {
+			continue
+		}
+		out = append(out, AITranscriptLine{
+			Seq:     sg.Sequence,
+			At:      botSegmentTime(sg),
+			Speaker: sg.Speaker,
+			Text:    sg.Text,
+			Final:   sg.IsFinal,
+		})
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+// botSegmentTime prefers the segment's created_at (RFC 3339); a missing
+// or unparsable value leaves At zero, which the panel renders without a
+// timestamp rather than with a wrong one.
+func botSegmentTime(sg botTranscriptSegment) int64 {
+	if sg.CreatedAt != "" {
+		if t, err := time.Parse(time.RFC3339Nano, sg.CreatedAt); err == nil {
+			return t.UnixMilli()
+		}
+	}
+	return 0
 }
 
 func (h *httpAIService) Summary(sessionID string) (*AIFinal, error) {
 	if !aiSessionIDOK(sessionID) {
 		return nil, errAIRefused
 	}
-	var out AIFinal
-	if err := h.do(http.MethodGet, "/v1/sessions/"+url.PathEscape(sessionID)+"/summary", nil, &out); err != nil {
+	var bs botSummary
+	if err := h.do(http.MethodGet, botAPI+"/"+url.PathEscape(sessionID)+"/summary", nil, &bs); err != nil {
 		return nil, err
 	}
-	return &out, nil
+	return mapBotSummary(&bs), nil
+}
+
+// mapBotSummary fits the bot's sections into AIFinal. Unresolved questions
+// have no slot of their own, so they follow the discussion points under
+// their own label rather than being dropped -- a question the meeting left
+// open is exactly the kind of thing a reader wants to see.
+func mapBotSummary(bs *botSummary) *AIFinal {
+	f := &AIFinal{
+		Summary:      strings.TrimSpace(bs.Summary),
+		KeyPoints:    botItemTexts(bs.DiscussionPoints),
+		Decisions:    botItemTexts(bs.Decisions),
+		ActionItems:  botItemTexts(bs.ActionItems),
+		Participants: botItemTexts(bs.Participants),
+		ReceivedAt:   nowMillis(),
+	}
+	for _, q := range botItemTexts(bs.UnresolvedQuestions) {
+		f.KeyPoints = append(f.KeyPoints, "Open question: "+q)
+	}
+	if bs.ModelUsed != "" {
+		f.TranscriptRef = "model:" + bs.ModelUsed
+	}
+	return f
+}
+
+// botItemTexts renders each untyped list item as one line. A string is
+// used as-is; an object is rendered from the keys the bot uses for action
+// items (task/owner/due and their synonyms), so "{task: X, owner: Y}"
+// becomes "X — Y". Nothing is invented: a key that is absent is simply not
+// printed.
+func botItemTexts(items []any) []string {
+	out := make([]string, 0, len(items))
+	for _, it := range items {
+		if t := botItemText(it); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func botItemText(it any) string {
+	switch v := it.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case map[string]any:
+		main := firstString(v, "task", "action", "text", "item", "title", "name", "point", "question", "decision")
+		if main == "" {
+			return ""
+		}
+		var extra []string
+		if owner := firstString(v, "owner", "assignee", "who", "responsible"); owner != "" {
+			extra = append(extra, owner)
+		}
+		if due := firstString(v, "due", "due_date", "deadline", "when"); due != "" {
+			extra = append(extra, "due "+due)
+		}
+		if len(extra) == 0 {
+			return main
+		}
+		return main + " — " + strings.Join(extra, ", ")
+	case float64, bool:
+		return fmt.Sprint(v)
+	}
+	return ""
+}
+
+func firstString(m map[string]any, keys ...string) string {
+	for _, k := range keys {
+		if s, ok := m[k].(string); ok && strings.TrimSpace(s) != "" {
+			return strings.TrimSpace(s)
+		}
+	}
+	return ""
 }
 
 func (h *httpAIService) Health() error {
-	return h.do(http.MethodGet, "/v1/health", nil, nil)
+	return h.do(http.MethodGet, "/health", nil, nil)
 }
 
 // aiSessionIDOK keeps a service-issued id inside what can safely go into a

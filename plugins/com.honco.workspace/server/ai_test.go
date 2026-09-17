@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -183,25 +184,66 @@ func TestRedactErr(t *testing.T) {
 	}
 }
 
+// The adapter speaks the bot's real API (ayushhonco12/bot). This fake
+// answers exactly the paths that bot serves, with its real shapes.
 func TestHTTPAIServiceMapsResponses(t *testing.T) {
 	var gotAuth, gotUA string
+	var created, started, stopped int
+	var createBody string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		gotUA = r.Header.Get("User-Agent")
-		switch r.URL.Path {
-		case "/base/v1/health":
+		switch r.Method + " " + r.URL.Path {
+		case "GET /base/health":
 			w.WriteHeader(200)
-		case "/base/v1/sessions":
-			_, _ = w.Write([]byte(`{"session_id":"s-1","status":"live"}`))
-		case "/base/v1/sessions/s-401/end":
+		case "POST /base/api/v1/meetings/":
+			created++
+			b, _ := io.ReadAll(r.Body)
+			createBody = string(b)
+			w.WriteHeader(201)
+			_, _ = w.Write([]byte(`{"id":"7b1c-uuid","title":"t","meeting_url":"https://m/x","status":"SCHEDULED"}`))
+		case "POST /base/api/v1/meetings/7b1c-uuid/start":
+			started++
+			_, _ = w.Write([]byte(`{"status":"starting","meeting_id":"7b1c-uuid"}`))
+		case "POST /base/api/v1/meetings/7b1c-uuid/stop":
+			stopped++
+			_, _ = w.Write([]byte(`{"status":"stop_requested"}`))
+		case "POST /base/api/v1/meetings/s-409/stop":
+			w.WriteHeader(409)
+			_, _ = w.Write([]byte(`{"detail":"Bot is not running (status: COMPLETED)"}`))
+		case "POST /base/api/v1/meetings/s-401/stop":
 			w.WriteHeader(401)
-		case "/base/v1/sessions/s-500":
+		case "GET /base/api/v1/meetings/s-active":
+			_, _ = w.Write([]byte(`{"id":"s-active","meeting_url":"u","status":"ACTIVE"}`))
+		case "GET /base/api/v1/meetings/s-active/health":
+			_, _ = w.Write([]byte(`{"status":"ACTIVE","live":true}`))
+		case "GET /base/api/v1/meetings/s-done":
+			_, _ = w.Write([]byte(`{"id":"s-done","meeting_url":"u","status":"COMPLETED"}`))
+		case "GET /base/api/v1/meetings/s-done/health":
+			w.WriteHeader(500) // advisory: must not break the status
+		case "GET /base/api/v1/meetings/s-done/transcripts":
+			// The real bot numbers segments from 0, so segment 0 is the
+			// first thing said and must not be dropped by a full pull.
+			_, _ = w.Write([]byte(`[
+			  {"id":"a","text":"hello there","is_final":true,"sequence":0,"speaker":"alice","created_at":"2026-09-16T10:00:00Z"},
+			  {"id":"b","text":"","is_final":true,"sequence":1,"speaker":"bob"},
+			  {"id":"c","text":"we ship friday","is_final":false,"sequence":2,"speaker":"bob"}
+			]`))
+		case "GET /base/api/v1/meetings/s-done/summary":
+			_, _ = w.Write([]byte(`{"meeting_id":"s-done","summary":"Short call.",
+			  "participants":["alice","bob"],
+			  "decisions":["Ship Friday"],
+			  "action_items":[{"task":"Write the runbook","owner":"bob","due":"Thursday"},"Ping legal",{"nonsense":1}],
+			  "discussion_points":["Timeline"],
+			  "unresolved_questions":["Budget?"],
+			  "model_used":"openai/gpt-oss-120b"}`))
+		case "GET /base/api/v1/meetings/s-500":
 			w.WriteHeader(503)
-		case "/base/v1/sessions/s-400/summary":
+		case "GET /base/api/v1/meetings/s-400/summary":
 			w.WriteHeader(400)
-		case "/base/v1/sessions/s-redir":
+		case "GET /base/api/v1/meetings/s-redir":
 			http.Redirect(w, r, "http://evil.example/steal", http.StatusFound)
-		case "/base/v1/sessions/s-slow":
+		case "GET /base/api/v1/meetings/s-slow":
 			time.Sleep(300 * time.Millisecond)
 		default:
 			w.WriteHeader(404)
@@ -219,13 +261,84 @@ func TestHTTPAIServiceMapsResponses(t *testing.T) {
 	if gotAuth != "Bearer tok" || !strings.HasPrefix(gotUA, "honco-chat-ai/") {
 		t.Fatalf("headers: %q %q", gotAuth, gotUA)
 	}
-	res, err := h.StartSession(AIStartRequest{MeetingID: "m"})
-	if err != nil || res.SessionID != "s-1" || res.Status != "live" {
+
+	// Start = create + start, with the join URL and Stage 1 only.
+	res, err := h.StartSession(AIStartRequest{MeetingID: "m1", Topic: "Weekly", MeetingURL: "https://m/x", Participants: []string{"alice"}})
+	if err != nil || res.SessionID != "7b1c-uuid" || res.Status != AIStatusConnecting {
 		t.Fatalf("start: %v %+v", err, res)
+	}
+	if created != 1 || started != 1 {
+		t.Fatalf("expected one create and one start, got %d/%d", created, started)
+	}
+	for _, want := range []string{`"meeting_url":"https://m/x"`, `"external_meeting_id":"m1"`, `"title":"Weekly"`, `"sales":{"enabled":false}`} {
+		if !strings.Contains(createBody, want) {
+			t.Errorf("create body missing %s: %s", want, createBody)
+		}
+	}
+	if _, err := h.StartSession(AIStartRequest{MeetingID: "m2"}); !errors.Is(err, errAIRefused) {
+		t.Fatalf("no URL must be refused before any call, got %v", err)
+	}
+
+	// Stop: 409 "not running" is the state we want, not an error.
+	if err := h.EndSession("7b1c-uuid"); err != nil || stopped != 1 {
+		t.Fatalf("stop: %v", err)
+	}
+	if err := h.EndSession("s-409"); err != nil {
+		t.Fatalf("409 on stop must be treated as already stopped, got %v", err)
 	}
 	if err := h.EndSession("s-401"); !errors.Is(err, errAIAuth) {
 		t.Fatalf("401 -> auth, got %v", err)
 	}
+
+	// Status maps the bot's enum; health is advisory.
+	st, err := h.SessionStatus("s-active")
+	if err != nil || st.Status != AIStatusLive || st.CaptureStatus != "in the call" {
+		t.Fatalf("active: %v %+v", err, st)
+	}
+	st, err = h.SessionStatus("s-done")
+	if err != nil || st.Status != AIStatusCompleted {
+		t.Fatalf("completed, with a failing health route, must still map: %v %+v", err, st)
+	}
+
+	// Transcript: empty lines dropped, after/limit applied here. after=-1
+	// is the full pull the poller does; it MUST include segment 0.
+	lines, err := h.Transcript("s-done", -1, 10)
+	if err != nil || len(lines) != 2 {
+		t.Fatalf("transcript full pull: %v %+v", err, lines)
+	}
+	if lines[0].Seq != 0 || lines[0].Speaker != "alice" || !lines[0].Final || lines[0].At == 0 {
+		t.Errorf("segment 0 must survive a full pull, mapped wrongly: %+v", lines[0])
+	}
+	if lines[1].Seq != 2 || lines[1].Final {
+		t.Errorf("interim line mapped wrongly: %+v", lines[1])
+	}
+	// after is an exclusive lower bound: after=0 drops seq 0, keeps seq 2.
+	if lines, _ = h.Transcript("s-done", 0, 10); len(lines) != 1 || lines[0].Seq != 2 {
+		t.Errorf("after=0 should leave only seq 2: %+v", lines)
+	}
+	if lines, _ = h.Transcript("s-done", -1, 1); len(lines) != 1 {
+		t.Errorf("limit=1 not honoured: %+v", lines)
+	}
+
+	// Summary: sections fit AIFinal; object items rendered; nothing invented.
+	fin, err := h.Summary("s-done")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fin.Summary != "Short call." || len(fin.Decisions) != 1 || fin.Decisions[0] != "Ship Friday" {
+		t.Errorf("summary/decisions: %+v", fin)
+	}
+	if len(fin.ActionItems) != 2 || fin.ActionItems[0] != "Write the runbook — bob, due Thursday" || fin.ActionItems[1] != "Ping legal" {
+		t.Errorf("action items: %+v", fin.ActionItems)
+	}
+	if len(fin.KeyPoints) != 2 || fin.KeyPoints[0] != "Timeline" || fin.KeyPoints[1] != "Open question: Budget?" {
+		t.Errorf("key points should carry open questions: %+v", fin.KeyPoints)
+	}
+	if len(fin.Participants) != 2 || fin.TranscriptRef != "model:openai/gpt-oss-120b" {
+		t.Errorf("participants/model: %+v", fin)
+	}
+
+	// Error classes are unchanged.
 	if _, err := h.SessionStatus("s-500"); !errors.Is(err, errAIUnavailable) {
 		t.Fatalf("503 -> unavailable, got %v", err)
 	}
@@ -240,6 +353,67 @@ func TestHTTPAIServiceMapsResponses(t *testing.T) {
 	}
 	if aiErrorKind(errAITimeout) != "timeout" || aiErrorKind(errAIUnconfigured) != "not_configured" || aiErrorKind(errors.New("x")) != "unreachable" {
 		t.Fatal("error kinds")
+	}
+}
+
+func TestMapBotStatus(t *testing.T) {
+	cases := map[string]string{
+		"SCHEDULED": AIStatusConnecting, "STARTING": AIStatusConnecting,
+		"ACTIVE": AIStatusLive, "active": AIStatusLive,
+		"STOPPING": AIStatusEnded, "ANALYZING": AIStatusEnded, "CANCELLED": AIStatusEnded,
+		"COMPLETED": AIStatusCompleted, "FAILED": AIStatusFailed,
+		"SOMETHING_NEW": "", "": "",
+	}
+	for in, want := range cases {
+		if got := mapBotStatus(in); got != want {
+			t.Errorf("mapBotStatus(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// ANALYZING must not read as completed: the panel shows a summary on
+// completed, and there is none yet.
+func TestMapBotStatusAnalyzingIsNotCompleted(t *testing.T) {
+	if mapBotStatus("ANALYZING") == AIStatusCompleted {
+		t.Fatal("ANALYZING mapped to completed")
+	}
+}
+
+func TestBotItemText(t *testing.T) {
+	cases := []struct {
+		in   any
+		want string
+	}{
+		{"  plain  ", "plain"},
+		{map[string]any{"task": "Do X", "owner": "bob", "due": "Fri"}, "Do X — bob, due Fri"},
+		{map[string]any{"task": "Do X"}, "Do X"},
+		{map[string]any{"action": "Do Y", "assignee": "ann"}, "Do Y — ann"},
+		{map[string]any{"owner": "bob"}, ""}, // no task: nothing to show, nothing invented
+		{map[string]any{}, ""},
+		{nil, ""},
+		{3.5, "3.5"},
+	}
+	for _, c := range cases {
+		if got := botItemText(c.in); got != c.want {
+			t.Errorf("botItemText(%v) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestRenderAIFinalMarkdown(t *testing.T) {
+	md := renderAIFinalMarkdown(&AIFinal{
+		Summary: "S", KeyPoints: []string{"k"}, Decisions: []string{"d"},
+		ActionItems: []string{"a"}, Participants: []string{"p"}, TranscriptRef: "model:m1",
+	})
+	for _, want := range []string{"## Summary\nS", "## Key discussion points\n- k", "## Decisions\n- d", "## Action items\n- a", "## Participants\n- p", "meeting bot (m1)"} {
+		if !strings.Contains(md, want) {
+			t.Errorf("markdown missing %q:\n%s", want, md)
+		}
+	}
+	// parseSections (Meeting Intelligence's own parser) must read it back.
+	got := parseSections(md)
+	if got[secSummary] != "S" || got[secDecisions] != "- d" || got[secActionItems] != "- a" {
+		t.Errorf("Meeting Intelligence cannot parse what we wrote: %+v", got)
 	}
 }
 

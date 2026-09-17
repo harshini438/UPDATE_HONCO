@@ -95,20 +95,39 @@ func (p *Plugin) handleAIEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	accepted, replayed, session, err := p.aiIngest(m, push.Events)
+	if err != nil {
+		p.writeErr(w, http.StatusInternalServerError, "could not store event", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"meeting_id": m.ID,
+		"accepted":   accepted,
+		"replayed":   replayed,
+		"status":     session.Status,
+	})
+}
+
+// aiIngest applies a batch of already-validated events to a meeting's
+// session, broadcasts each change, and sends the final/failed
+// notifications. It is the one path AI content takes into Honco: the push
+// endpoint above calls it with what the service sent, and the poller in
+// ai_poll.go calls it with events it synthesised from what it fetched --
+// so a pulled summary is stored, broadcast and notified exactly as a
+// pushed one would be.
+func (p *Plugin) aiIngest(m *Meeting, events []aiEvent) (accepted, replayed int, session *AISession, err error) {
 	now := nowMillis()
-	accepted, replayed := 0, 0
 	var last *aiEvent
-	var session *AISession
-	for i := range push.Events {
-		ev := &push.Events[i]
+	for i := range events {
+		ev := &events[i]
 		if ev.Type == AIEventError {
 			// The raw message is for the operator, not the user.
 			p.client.Log.Warn("honco ai: service reported an error", "meeting_id", m.ID, "kind", ev.Kind, "message", clip(ev.Message, 500))
 		}
 		s, changed, uerr := p.updateAISession(m, func(s *AISession) bool { return s.apply(ev, now) })
 		if uerr != nil {
-			p.writeErr(w, http.StatusInternalServerError, "could not store event", uerr)
-			return
+			return accepted, replayed, nil, uerr
 		}
 		session = s
 		if !changed {
@@ -119,6 +138,9 @@ func (p *Plugin) handleAIEvents(w http.ResponseWriter, r *http.Request) {
 		last = ev
 		p.broadcastAI(m, s, ev)
 	}
+	if session == nil {
+		session = p.loadAISession(m)
+	}
 
 	if last != nil && last.Type == AIEventFinal {
 		p.notifyAIFinal(m, session)
@@ -126,13 +148,7 @@ func (p *Plugin) handleAIEvents(w http.ResponseWriter, r *http.Request) {
 	if last != nil && last.Type == AIEventError {
 		p.notifyAIFailed(m, session)
 	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"meeting_id": m.ID,
-		"accepted":   accepted,
-		"replayed":   replayed,
-		"status":     session.Status,
-	})
+	return accepted, replayed, session, nil
 }
 
 // handleAIStatus tells the panel whether the feature is wired up at all,

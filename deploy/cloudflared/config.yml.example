@@ -1,0 +1,47 @@
+# Honco Chat — named Cloudflare Tunnel, ingress template.
+#
+# Copy to ~/.cloudflared/config.yml on the host that will BE the origin,
+# fill in the two ids, and run:
+#
+#   cloudflared tunnel run honcochat
+#
+# This file is a template and contains no secret. The credentials file it
+# points at DOES, and must never be committed (see .gitignore).
+#
+# Prerequisites, none of which this file can satisfy on its own:
+#   1. honco.in delegated to Cloudflare (see ../../dns/honco.in-to-cloudflare.md)
+#   2. cloudflared tunnel login          -> writes ~/.cloudflared/cert.pem
+#   3. cloudflared tunnel create honcochat -> writes ~/.cloudflared/<uuid>.json
+#   4. cloudflared tunnel route dns honcochat chat.honco.in
+#
+# Replace <TUNNEL-UUID> with the id printed by step 3.
+
+tunnel: <TUNNEL-UUID>
+credentials-file: /home/<user>/.cloudflared/<TUNNEL-UUID>.json
+
+# Keep the connection warm and fail fast when the origin is down, so a
+# restart of Honco Chat surfaces as a 502 for seconds rather than minutes.
+originRequest:
+  connectTimeout: 10s
+  noTLSVerify: false          # never true: the origin is plain HTTP on loopback,
+                              # so there is no certificate to skip. TLS is
+                              # terminated by Cloudflare in front of the tunnel.
+
+ingress:
+  # The ONLY service published. Honco Chat on loopback.
+  #
+  # WebSockets need no special directive here -- cloudflared proxies the
+  # Upgrade handshake for an http:// origin automatically. What DOES matter
+  # is that Mattermost's SiteURL equals https://chat.honco.in, because the
+  # server checks the websocket Origin against it and answers 403 on a
+  # mismatch. That check is the single most common cause of "the app loads
+  # but nothing updates live".
+  - hostname: chat.honco.in
+    service: http://127.0.0.1:8065
+
+  # Everything else is refused. Without this catch-all cloudflared will not
+  # start; with anything more permissive the tunnel could reach another
+  # local port. PostgreSQL (5433), Prosody (5280), Jicofo (8888), JVB
+  # (8080), Jibri (2222), the Workspace backend (8081) and its database
+  # (5434) are all bound to 127.0.0.1 and MUST stay unpublished.
+  - service: http_status:404

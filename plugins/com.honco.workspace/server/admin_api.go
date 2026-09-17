@@ -153,6 +153,11 @@ func (p *Plugin) collectHealth() *adminHealth {
 		{"Meeting Service", func() healthCheck {
 			return httpProbe("Meeting Service", "http://127.0.0.1:8077/health", nil)
 		}},
+		// The two services Honco calls out to. Both probes are
+		// reachability only -- neither sends a conversation and neither
+		// can leak a credential. See summarizer_health.go.
+		{"Summarizer", p.probeSummarizer},
+		{"AI Service", p.probeAIService},
 	}
 
 	out := make([]healthCheck, len(probes))

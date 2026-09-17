@@ -132,6 +132,10 @@ type AIFinal struct {
 	KeyInsights    []string `json:"key_insights,omitempty"`
 	ClientInsights []string `json:"client_insights,omitempty"`
 	Topics         []string `json:"topics,omitempty"`
+	// Who spoke, as the service names them. Carried so a summary stored
+	// for Meeting Intelligence can fill its participants column; the
+	// panel does not render it.
+	Participants []string `json:"participants,omitempty"`
 	// Where the full transcript lives on the service side, when it is
 	// larger than what Honco keeps. Opaque to Honco; never fetched from
 	// the browser. The adapter uses it server-side.
@@ -803,6 +807,10 @@ func (p *Plugin) aiStartSession(m *Meeting, requesterID string) {
 		Topic:        m.Topic,
 		StartedAt:    m.StartedAt,
 		Participants: participants,
+		// The same URL a person clicks on the card. The bot joins by
+		// opening it in a browser, so it must be one that resolves from
+		// wherever the bot runs.
+		MeetingURL: p.joinURL(m),
 	})
 	s, _, uerr := p.updateAISession(m, func(s *AISession) bool {
 		if err != nil {
@@ -831,6 +839,13 @@ func (p *Plugin) aiStartSession(m *Meeting, requesterID string) {
 		p.client.Log.Warn("honco ai: start session", "meeting_id", m.ID, "kind", s.ErrorKind, "err", err.Error())
 	}
 	p.broadcastAI(m, s, nil)
+
+	// The bot does not push events, so from here Honco pulls: status while
+	// the call runs, then the transcript and summary once the bot has
+	// finished analysing. See ai_poll.go.
+	if err == nil && s.ExternalSessionID != "" {
+		go p.aiPollBot(m.ID, s.ExternalSessionID)
+	}
 }
 
 // aiConfigured: is there any way for the service to reach us, or us to

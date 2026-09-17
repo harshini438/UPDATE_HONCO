@@ -131,29 +131,50 @@ Errors: `401` bad/missing secret · `404` unknown meeting · `400` malformed
 | Live window sent on open | 200 lines | Older pages are fetched on demand. |
 | Suggestions / insights kept | 50 each · topics 30 | |
 
-## 2. Honco → Service (`AIIntegrationService`, proposed)
+## 2. Honco → Service (`AIIntegrationService`) — the bot's real API
+
+*Revised 2026-09-16.* The service is the AI Meeting Bot
+(`github.com/ayushhonco12/bot`, FastAPI on `127.0.0.1:8001`). The paths
+below are what it actually serves, confirmed against its live OpenAPI;
+the earlier `/v1/sessions` proposal was replaced in `ai_adapter.go`, the
+only file that changed for it.
 
 Implemented in `ai_adapter.go`; **only used when `AIServiceURL` is set.**
 When it is unset every method returns "not configured" and the panel says
 so — it never fakes a success.
 
-| Method | Call | Purpose |
+| Method | Call(s) | Purpose |
 |---|---|---|
-| `StartSession` | `POST {base}/v1/sessions` → `{session_id, status}` | Attach the service to a Honco meeting. Body: `meeting_id`, `room_name`, `channel_id`, `topic`, `started_at`, `participants[]`, `callback_url` (Honco tells the service where to push, so it needs no separate configuration). |
-| `EndSession` | `POST {base}/v1/sessions/{id}/end` | The meeting ended. |
-| `SessionStatus` | `GET {base}/v1/sessions/{id}` | The service's view of a session. |
-| `Transcript` | `GET {base}/v1/sessions/{id}/transcript?after=&limit=` | Lines beyond Honco's window. |
-| `Summary` | `GET {base}/v1/sessions/{id}/summary` | Post-call outputs. |
-| `Health` | `GET {base}/v1/health` | Reachability, shown on the admin dashboard. Probed on open/refresh only — never on a timer. |
+| `StartSession` | `POST {base}/api/v1/meetings/` → `{id, status}`, then `POST …/{id}/start` | Body: `meeting_url` (the card's join URL — the bot joins by opening it in a headless browser), `title`, `external_meeting_id` (Honco's meeting id), `participants[]`, `sales: {enabled: false}`. The bot's id becomes Honco's `external_session_id`. |
+| `EndSession` | `POST …/{id}/stop` | Bot leaves. A `409` ("not running") is treated as already stopped, not as an error. |
+| `SessionStatus` | `GET …/{id}` + `GET …/{id}/health` | Bot status, mapped: `SCHEDULED/STARTING→connecting`, `ACTIVE→live`, `STOPPING/ANALYZING/CANCELLED→ended`, `COMPLETED→completed`, `FAILED→failed`. `health.live` becomes the capture status; a failing health route does not break the status. |
+| `Transcript` | `GET …/{id}/transcripts` → `[{sequence, text, is_final, speaker, created_at}]` | The bot has no paging; `after`/`limit` are applied by Honco. Empty lines are dropped. |
+| `Summary` | `GET …/{id}/summary` | `summary`, `discussion_points→key_points`, `decisions`, `action_items` (string or `{task, owner, due}` objects, rendered as one line each — nothing absent is invented), `unresolved_questions` (appended to key points as "Open question: …"), `participants`, `model_used`. |
+| `Health` | `GET {base}/health` | Reachability, shown on the admin dashboard. |
 
-Authentication: `Authorization: Bearer <AIServiceToken>`. Timeout 15 s.
-**Redirects are refused** (a redirect could hand the token to another
-host); responses are read with a 4 MB cap; `401/403` → auth, `5xx` →
-unavailable, `4xx` → refused, timeout → timeout. The panel shows the
-class, never the message.
+**The bot does not push.** It never calls `/api/v1/ai/events`. So after
+`StartSession`, Honco **pulls** (`ai_poll.go`): status every 10 s while
+the session runs; on `COMPLETED`, the transcript and summary. What is
+pulled is turned into the same events §1 accepts, validated by the same
+code, and ingested by the same `aiIngest` — so the panel, the WebSocket
+broadcast, the notifications and the Meeting Intelligence summary row
+behave identically to a pushing service. The pulled summary is also
+written to `honco_meeting_summaries` (existing table, `ready`) so **View
+Summary** on the card shows it. Live suggestions are not pulled; the
+co-pilot is disabled per meeting (`sales.enabled=false`) for this
+integration.
 
-**If the real service's API differs, change this one file.** Nothing else
-in the plugin or the UI depends on these paths.
+Authentication: the bot has none. `Authorization: Bearer <AIServiceToken>`
+is sent when a token is configured and ignored by the bot; leave the
+token empty. Timeout 15 s. **Redirects are refused**; responses are read
+with a 4 MB cap; `401/403` → auth, `5xx` → unavailable, `4xx` → refused,
+timeout → timeout. The panel shows the class, never the message.
+
+Bot-side prerequisites (its own `.env`, loaded into the process
+environment — its modules read `os.getenv`): `JITSI_INSECURE_TLS=true`
+for Honco Meet's self-signed certificate; `GROQ_API_KEY` for Stage 1
+analysis (`LLM_PROVIDER=groq`); a Playwright Chromium with its system
+libraries installed (`libnss3`, `libnspr4`, `libasound2`).
 
 ## 3. Honco's own endpoints (browser ← server)
 
