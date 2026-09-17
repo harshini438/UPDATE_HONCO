@@ -205,8 +205,8 @@ func TestHTTPAIServiceMapsResponses(t *testing.T) {
 		case "GET /base/api/v1/meetings/s-active/sales/suggestions":
 			// The bot returns rows oldest-first; the empty one must be dropped.
 			_, _ = w.Write([]byte(`[
-			  {"id":"sg1","priority":"high","type":"NEXT_BEST_QUESTION","suggestion":"Confirm the Friday deadline","reason":"they asked","status":"delivered"},
-			  {"id":"sg2","priority":"low","type":"NUDGE","suggestion":"","status":"delivered"}
+			  {"id":"sg1","priority":"high","type":"NEXT_BEST_QUESTION","text":"Confirm the Friday deadline","reason":"they asked","status":"delivered"},
+			  {"id":"sg2","priority":"low","type":"NUDGE","text":"","status":"delivered"}
 			]`))
 		case "POST /base/api/v1/meetings/7b1c-uuid/start":
 			started++
