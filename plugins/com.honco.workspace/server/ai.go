@@ -182,6 +182,25 @@ type AISession struct {
 
 func aiSessionKey(meetingID string) string { return "ai:session:" + meetingID }
 
+// aiCopilotKey holds the per-meeting live-copilot token. It lives in its own
+// KV entry -- never inside the AISession that is broadcast or served to the
+// browser -- so the secret stays strictly server-side.
+func aiCopilotKey(meetingID string) string { return "ai:copilot:" + meetingID }
+
+func (p *Plugin) storeCopilotToken(meetingID, token string) {
+	if _, err := p.client.KV.Set(aiCopilotKey(meetingID), []byte(token)); err != nil {
+		p.client.Log.Warn("honco ai: could not store copilot token", "meeting_id", meetingID, "err", err.Error())
+	}
+}
+
+func (p *Plugin) loadCopilotToken(meetingID string) string {
+	var b []byte
+	if err := p.client.KV.Get(aiCopilotKey(meetingID), &b); err != nil {
+		return ""
+	}
+	return string(b)
+}
+
 // aiEvent is one pushed event, after decoding and before validation.
 type aiEvent struct {
 	ID        string `json:"id,omitempty"` // optional; used to drop replays
@@ -800,6 +819,19 @@ func (p *Plugin) aiStartSession(m *Meeting, requesterID string) {
 			participants = append(participants, pt.DisplayName)
 		}
 	}
+	// The live co-pilot advises one side of the call. We name the meeting's
+	// host (its creator) as that person, by the display name they join Jitsi
+	// with, so the suggestions are addressed to them. Best-effort: an
+	// unresolved host just means the bot treats everyone as the customer.
+	var salesman []string
+	if m.CreatorID != "" {
+		if u, uerr := p.client.User.Get(m.CreatorID); uerr == nil && u != nil {
+			if name := userDisplayName(u); name != "" {
+				salesman = []string{name}
+			}
+		}
+	}
+
 	res, err := p.aiService().StartSession(AIStartRequest{
 		MeetingID:    m.ID,
 		RoomName:     m.RoomName,
@@ -807,6 +839,7 @@ func (p *Plugin) aiStartSession(m *Meeting, requesterID string) {
 		Topic:        m.Topic,
 		StartedAt:    m.StartedAt,
 		Participants: participants,
+		Salesman:     salesman,
 		// The same URL a person clicks on the card. The bot joins by
 		// opening it in a browser, so it must be one that resolves from
 		// wherever the bot runs.
@@ -820,6 +853,11 @@ func (p *Plugin) aiStartSession(m *Meeting, requesterID string) {
 		}
 		if res.SessionID != "" {
 			s.ExternalSessionID = res.SessionID
+		}
+		// Keep the per-meeting copilot token server-side, in its own KV key
+		// (never in the session that is broadcast or served to the browser).
+		if res.CopilotToken != "" {
+			p.storeCopilotToken(m.ID, res.CopilotToken)
 		}
 		// The service decides when it is live (it sends a status event);
 		// until then the panel keeps showing "connecting".

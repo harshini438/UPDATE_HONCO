@@ -5,11 +5,24 @@
 
 // Where the application lives. Production sets HONCO_CHAT_URL at build
 // time; the localhost fallback is for local development only.
-const CHAT_URL = (import.meta.env.HONCO_CHAT_URL || 'http://localhost:8065').replace(/\/+$/, '');
+// Same-origin by default: the website and Honco Chat are served behind one
+// local reverse proxy, so links are relative (""). A production build can
+// still point elsewhere by setting HONCO_CHAT_URL.
+const CHAT_URL = (import.meta.env.HONCO_CHAT_URL ?? '').replace(/\/+$/, '');
 const ENV_LINKS = {
     HONCO_DOCS_URL: import.meta.env.HONCO_DOCS_URL || '',
     HONCO_CONTACT_URL: import.meta.env.HONCO_CONTACT_URL || '',
 };
+
+// If Honco Chat bounced an unauthenticated visitor to the landing page with
+// a ?redirect_to (its default is the site root, which is this website), send
+// them to the sign-in page and remember where they were headed.
+(function () {
+    try {
+        var rt = new URLSearchParams(window.location.search).get('redirect_to');
+        if (rt) { window.location.replace('/login?redirect_to=' + encodeURIComponent(rt)); }
+    } catch (e) { /* ignore */ }
+})();
 
 const doc = document.documentElement;
 const $ = (sel, root = document) => root.querySelector(sel);

@@ -2107,6 +2107,32 @@
     function SuggestionCard(props) {
         var s = props.suggestion;
         var k = aiKind(s.kind, 'suggestion');
+        // Per-card action state (Create Task / Dismiss). Self-contained so no
+        // wiring through the panel is needed; the task uses the existing API.
+        var a = React.useState('idle');
+        var act = a[0], setAct = a[1];
+        if (act === 'dismissed') {
+            return null;
+        }
+        function createTask() {
+            var teamId = '';
+            try { teamId = window.store.getState().entities.teams.currentTeamId; } catch (e) {}
+            if (!teamId) { setAct('error'); return; }
+            setAct('creating');
+            request('POST', '/tasks', {team_id: teamId, title: (s.text || '').slice(0, 200)})
+                .then(function () { setAct('created'); })
+                .catch(function () { setAct('error'); });
+        }
+        // Actions live on the latest card only, to keep the panel compact.
+        var actions = props.latest ? e('div', {key: 'act', className: 'hw-row-actions', style: {marginTop: 8}},
+            act === 'created' ? [e('span', {key: 'ok', className: 'hw-badge hw-badge-ok'}, 'Task created')] : [
+                e(Button, {key: 'ct', small: true, kind: 'secondary', icon: 'check-circle-outline',
+                    disabled: act === 'creating', onClick: createTask}, act === 'creating' ? 'Creating…' : 'Create Task'),
+                e(Button, {key: 'dm', small: true, kind: 'ghost', onClick: function () {
+                    setAct('dismissed');
+                }}, 'Dismiss'),
+                act === 'error' ? e('span', {key: 'er', className: 'hw-form-note', style: {color: 'var(--error-text)'}}, 'Could not create the task') : null,
+            ]) : null;
         return e('div', {
             className: 'hw-ai-card' + (props.latest ? ' hw-ai-card-latest' : '') + (props.fresh ? ' hw-ai-card-new' : ''),
             style: {borderLeftColor: k.accent},
@@ -2116,7 +2142,7 @@
         }, [
             e('div', {key: 'h', className: 'hw-ai-card-head'}, [
                 e(Icon, {key: 'i', name: props.latest ? 'lightbulb-outline' : k.icon, style: {color: k.accent}}),
-                e('span', {key: 'k', className: 'hw-ai-card-kind'}, props.latest ? 'Sales suggestion' : (s.title || k.label)),
+                e('span', {key: 'k', className: 'hw-ai-card-kind'}, props.latest ? 'AI suggestion' : (s.title || k.label)),
                 (props.latest && s.kind && k.label !== 'Suggestion') ? e('span', {key: 'tag', className: 'hw-badge hw-ai-tag'}, s.title || k.label) : null,
                 props.fresh ? e('span', {key: 'new', className: 'hw-badge hw-badge-ok hw-ai-tag'}, 'New') : null,
                 e('span', {key: 't', className: 'hw-ai-time hw-spacer'}, formatClock(s.at)),
@@ -2124,6 +2150,7 @@
             e('div', {key: 'b', className: 'hw-ai-card-body'}, s.text),
             e('div', {key: 'f', className: 'hw-ai-card-foot'},
                 'Suggested by ' + (s.source || 'Honco AI') + (s.status ? ' · ' + s.status : '')),
+            actions,
         ]);
     }
 
@@ -3732,8 +3759,14 @@
                 key: 'dl',
                 className: 'hw-btn hw-btn-secondary hw-btn-sm',
                 href: href + '?download=1',
-                target: '_blank',
-                rel: 'noopener noreferrer',
+                // The `download` attribute (same-origin) plus the server's
+                // Content-Disposition: attachment makes the browser save the
+                // file in place. This deliberately does NOT open a new tab:
+                // a target="_blank" download is silently stopped by popup
+                // blockers and otherwise leaves a blank tab, which is what
+                // made downloads look broken. Mattermost still re-authorizes
+                // the request from the session cookie.
+                download: f.name || '',
                 'aria-label': 'Download ' + (f.name || 'file'),
                 'data-file-download': f.id,
             }, [e(Icon, {key: 'i', name: 'download'}), 'Download']),
@@ -4536,6 +4569,13 @@
         }, []);
         var showOrg = Boolean(caps && caps.is_org_admin);
 
+        // The overflow ("More") menu keeps the everyday navigation to the
+        // core collaboration features; less-used and administrative entries
+        // live here so they do not compete with Chat, Meetings and Files.
+        var mo = React.useState(false);
+        var moreOpen = mo[0];
+        var setMoreOpen = mo[1];
+
         var t = React.useState(initialTab);
         var tab = t[0];
         var setTab = t[1];
@@ -4604,16 +4644,82 @@
             ]);
         }
 
+        // The "More" menu: contextual and administrative entries kept out of
+        // the everyday row. Each is capability-gated; the server still
+        // authorizes every request regardless of what the menu shows.
+        var moreItems = [
+            {id: 'ai', label: 'AI Assistant', icon: 'creation-outline'},
+            {id: 'support', label: 'Support', icon: 'monitor'},
+        ];
+        if (showOrg) {
+            moreItems.push({id: 'org', label: 'Manage Organization', icon: 'domain'});
+        }
+        if (isAdmin) {
+            moreItems.push({id: 'admin', label: 'Honco Admin', icon: 'shield-outline'});
+        }
+        var moreActive = moreItems.some(function (m) {
+            return m.id === tab;
+        });
+
+        function moreButton() {
+            return e('div', {key: 'more', style: {position: 'relative', display: 'flex'}}, [
+                e('button', {
+                    key: 'btn',
+                    className: 'hw-tab' + (moreActive ? '' : ''),
+                    'aria-selected': moreActive,
+                    'aria-haspopup': 'menu',
+                    'aria-expanded': moreOpen,
+                    'aria-label': 'More',
+                    title: 'More',
+                    role: 'tab',
+                    onClick: function () {
+                        setMoreOpen(!moreOpen);
+                    },
+                }, [
+                    e(Icon, {key: 'i', name: 'dots-horizontal'}),
+                    e('span', {key: 'l'}, 'More'),
+                ]),
+                moreOpen ? e('div', {
+                    key: 'backdrop',
+                    style: {position: 'fixed', inset: 0, zIndex: 19},
+                    onClick: function () {
+                        setMoreOpen(false);
+                    },
+                }) : null,
+                moreOpen ? e('div', {
+                    key: 'menu',
+                    role: 'menu',
+                    className: 'hw-fade',
+                    style: {
+                        position: 'absolute', top: '100%', right: 0, zIndex: 20, minWidth: 190,
+                        background: 'var(--center-channel-bg)', color: 'var(--center-channel-color)',
+                        border: '1px solid rgba(var(--center-channel-color-rgb),.16)', borderRadius: 6,
+                        boxShadow: '0 6px 20px rgba(0,0,0,.18)', padding: 4, marginTop: 2,
+                    },
+                }, moreItems.map(function (m) {
+                    return e('button', {
+                        key: m.id,
+                        role: 'menuitem',
+                        className: 'hw-btn hw-btn-ghost',
+                        style: {width: '100%', justifyContent: 'flex-start', gap: 8, padding: '7px 10px',
+                            fontWeight: m.id === tab ? 600 : 400},
+                        onClick: function () {
+                            setTab(m.id);
+                            setMoreOpen(false);
+                        },
+                    }, [e(Icon, {key: 'i', name: m.icon}), m.label]);
+                })) : null,
+            ]);
+        }
+
         return e('div', {className: 'hw'}, [
             e('div', {key: 'tabs', role: 'tablist', 'aria-label': 'Honco Workspace', className: 'hw-tabs'}, [
-                tabButton('tasks', 'Tasks', 'check-circle-outline'),
                 tabButton('meetings', 'Meeting Intelligence', 'text-box-outline', 'Meetings'),
-                tabButton('ai', 'AI Assistant', 'creation-outline'),
-                tabButton('support', 'Support', 'monitor'),
+                tabButton('tasks', 'Tasks', 'check-circle-outline'),
                 tabButton('files', 'Files', 'paperclip'),
                 tabButton('search', 'Search', 'magnify'),
-            ].concat(showOrg ? [tabButton('org', 'Organization', 'domain', 'Org')] : [])
-                .concat(isAdmin ? [tabButton('admin', 'Admin', 'shield-outline')] : [])),
+                moreButton(),
+            ]),
 
             e('div', {key: 'panel', style: {flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column'}},
                 tab === 'tasks' ? e(TasksPanel) :

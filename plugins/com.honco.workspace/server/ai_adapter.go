@@ -44,6 +44,11 @@ type AIIntegrationService interface {
 	Transcript(sessionID string, after int64, limit int) ([]AITranscriptLine, error)
 	// Summary fetches the post-call outputs.
 	Summary(sessionID string) (*AIFinal, error)
+	// Suggestions fetches the live co-pilot suggestions produced so far,
+	// oldest first. token is the per-meeting copilot token returned by
+	// StartSession; it is held server-side only. Returns an empty slice when
+	// the co-pilot is off or has produced nothing yet.
+	Suggestions(sessionID, token string) ([]AISuggestion, error)
 	// Health is a cheap reachability probe for the admin dashboard.
 	Health() error
 }
@@ -61,11 +66,18 @@ type AIStartRequest struct {
 	// The join URL the bot opens in its browser. Required by the bot; set
 	// by ai.go from the same joinURL the meeting card uses.
 	MeetingURL string `json:"meeting_url,omitempty"`
+	// Who the live co-pilot should advise (by display name). ai.go passes the
+	// meeting's host so the Stage 2 suggestions are addressed to them; empty
+	// is allowed (the bot then treats everyone as the customer).
+	Salesman []string `json:"salesman,omitempty"`
 }
 
 type AIStartResponse struct {
 	SessionID string `json:"session_id"`
 	Status    string `json:"status,omitempty"`
+	// CopilotToken authorizes the live-suggestion endpoints for this meeting.
+	// Held server-side only; never sent to the browser.
+	CopilotToken string `json:"copilot_token,omitempty"`
 }
 
 type AISessionStatus struct {
@@ -186,7 +198,10 @@ func (unconfiguredAIService) Transcript(string, int64, int) ([]AITranscriptLine,
 	return nil, errAIUnconfigured
 }
 func (unconfiguredAIService) Summary(string) (*AIFinal, error) { return nil, errAIUnconfigured }
-func (unconfiguredAIService) Health() error                    { return errAIUnconfigured }
+func (unconfiguredAIService) Suggestions(string, string) ([]AISuggestion, error) {
+	return nil, errAIUnconfigured
+}
+func (unconfiguredAIService) Health() error { return errAIUnconfigured }
 
 // --- HTTP ------------------------------------------------------------------
 
@@ -226,13 +241,16 @@ type botCreateRequest struct {
 	ExternalMeetingID string   `json:"external_meeting_id,omitempty"`
 	Participants      []string `json:"participants,omitempty"`
 	Sales             struct {
-		Enabled bool `json:"enabled"`
+		Enabled  bool     `json:"enabled"`
+		Salesman []string `json:"salesman,omitempty"`
+		Client   []string `json:"client,omitempty"`
 	} `json:"sales"`
 }
 
 type botMeeting struct {
-	ID     string `json:"id"`
-	Status string `json:"status"`
+	ID           string `json:"id"`
+	Status       string `json:"status"`
+	CopilotToken string `json:"copilot_token,omitempty"`
 }
 
 type botHealth struct {
@@ -297,7 +315,12 @@ func (h *httpAIService) StartSession(req AIStartRequest) (*AIStartResponse, erro
 		ExternalMeetingID: req.MeetingID,
 		Participants:      req.Participants,
 	}
-	body.Sales.Enabled = false
+	// Stage 2 live co-pilot ON. The bot produces suggestions/insights while
+	// the call runs; Honco polls them (ai_poll.go) and shows them in the AI
+	// Assistant panel. req.Salesman names who to advise (the host); empty is
+	// allowed. The bot returns copilot_token, which authorizes the read.
+	body.Sales.Enabled = true
+	body.Sales.Salesman = req.Salesman
 
 	var created botMeeting
 	if err := h.do(http.MethodPost, botAPI+"/", body, &created); err != nil {
@@ -310,7 +333,58 @@ func (h *httpAIService) StartSession(req AIStartRequest) (*AIStartResponse, erro
 	if err := h.do(http.MethodPost, botAPI+"/"+url.PathEscape(created.ID)+"/start", nil, nil); err != nil {
 		return nil, err
 	}
-	return &AIStartResponse{SessionID: created.ID, Status: AIStatusConnecting}, nil
+	return &AIStartResponse{SessionID: created.ID, Status: AIStatusConnecting, CopilotToken: created.CopilotToken}, nil
+}
+
+// botSuggestion is one row from the bot's GET /sales/suggestions. The REST
+// list serialises the suggestion text under "text" (the WebSocket envelope
+// calls the same field "suggestion" -- the REST endpoint does not). Only the
+// fields Honco renders are decoded.
+type botSuggestion struct {
+	ID        string  `json:"id"`
+	Priority  string  `json:"priority"`
+	Type      string  `json:"type"`
+	Text      string  `json:"text"`
+	Reason    string  `json:"reason"`
+	Status    string  `json:"status"`
+	CreatedAt float64 `json:"created_at"`
+}
+
+// Suggestions fetches the live co-pilot suggestions for a meeting. The
+// per-meeting copilot token authorizes the read; it is passed as a query
+// parameter exactly as the bot expects, and never leaves the server.
+func (h *httpAIService) Suggestions(sessionID, token string) ([]AISuggestion, error) {
+	if !aiSessionIDOK(sessionID) {
+		return nil, errAIRefused
+	}
+	if strings.TrimSpace(token) == "" {
+		// No token means the co-pilot is not enabled for this session; that
+		// is a normal state, not an error -- there is simply nothing to read.
+		return nil, nil
+	}
+	// status=delivered: only the suggestions the bot actually surfaced, not
+	// the ones its validator rejected.
+	path := botAPI + "/" + url.PathEscape(sessionID) + "/sales/suggestions?status=delivered&token=" + url.QueryEscape(token)
+	var rows []botSuggestion
+	if err := h.do(http.MethodGet, path, nil, &rows); err != nil {
+		return nil, err
+	}
+	out := make([]AISuggestion, 0, len(rows))
+	for _, r := range rows {
+		text := strings.TrimSpace(r.Text)
+		if text == "" {
+			continue
+		}
+		out = append(out, AISuggestion{
+			ID:     r.ID,
+			Kind:   strings.ToLower(strings.TrimSpace(r.Type)),
+			Title:  strings.TrimSpace(r.Priority),
+			Text:   text,
+			Source: "copilot",
+			Status: strings.TrimSpace(r.Status),
+		})
+	}
+	return out, nil
 }
 
 // EndSession asks the bot to leave. The bot answers 409 when it is not

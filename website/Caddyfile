@@ -1,0 +1,24 @@
+# Honco unified local origin — website + Honco Chat (Mattermost) on one port.
+#
+# Port 8090 (8080 belongs to Jitsi JVB and must not be touched).
+# Run:  caddy run --config Caddyfile
+# (If Caddy is not installed, dev-proxy.cjs is the dependency-free equivalent:
+#  node dev-proxy.cjs)
+
+:8090 {
+	# The public website (static build) owns exactly these paths.
+	@site path / /login /signup /forgot-password /reset-password /verify-email /favicon.svg /assets/*
+	handle @site {
+		root * ./dist
+		# Serve the clean routes as their built .html files.
+		try_files {path} {path}.html /index.html
+		file_server
+	}
+
+	# Everything else — API, plugins, static assets, the workspace SPA and
+	# the WebSocket — is Honco Chat. reverse_proxy transparently handles the
+	# Upgrade handshake.
+	handle {
+		reverse_proxy 127.0.0.1:8065
+	}
+}

@@ -201,7 +201,13 @@ func TestHTTPAIServiceMapsResponses(t *testing.T) {
 			b, _ := io.ReadAll(r.Body)
 			createBody = string(b)
 			w.WriteHeader(201)
-			_, _ = w.Write([]byte(`{"id":"7b1c-uuid","title":"t","meeting_url":"https://m/x","status":"SCHEDULED"}`))
+			_, _ = w.Write([]byte(`{"id":"7b1c-uuid","title":"t","meeting_url":"https://m/x","status":"SCHEDULED","copilot_token":"cptok-1"}`))
+		case "GET /base/api/v1/meetings/s-active/sales/suggestions":
+			// The bot returns rows oldest-first; the empty one must be dropped.
+			_, _ = w.Write([]byte(`[
+			  {"id":"sg1","priority":"high","type":"NEXT_BEST_QUESTION","suggestion":"Confirm the Friday deadline","reason":"they asked","status":"delivered"},
+			  {"id":"sg2","priority":"low","type":"NUDGE","suggestion":"","status":"delivered"}
+			]`))
 		case "POST /base/api/v1/meetings/7b1c-uuid/start":
 			started++
 			_, _ = w.Write([]byte(`{"status":"starting","meeting_id":"7b1c-uuid"}`))
@@ -263,17 +269,36 @@ func TestHTTPAIServiceMapsResponses(t *testing.T) {
 	}
 
 	// Start = create + start, with the join URL and Stage 1 only.
-	res, err := h.StartSession(AIStartRequest{MeetingID: "m1", Topic: "Weekly", MeetingURL: "https://m/x", Participants: []string{"alice"}})
+	res, err := h.StartSession(AIStartRequest{MeetingID: "m1", Topic: "Weekly", MeetingURL: "https://m/x", Participants: []string{"alice"}, Salesman: []string{"Harshini"}})
 	if err != nil || res.SessionID != "7b1c-uuid" || res.Status != AIStatusConnecting {
 		t.Fatalf("start: %v %+v", err, res)
+	}
+	// The per-meeting copilot token is captured from the create response.
+	if res.CopilotToken != "cptok-1" {
+		t.Errorf("copilot token not captured: %q", res.CopilotToken)
 	}
 	if created != 1 || started != 1 {
 		t.Fatalf("expected one create and one start, got %d/%d", created, started)
 	}
-	for _, want := range []string{`"meeting_url":"https://m/x"`, `"external_meeting_id":"m1"`, `"title":"Weekly"`, `"sales":{"enabled":false}`} {
+	// Stage 2 co-pilot is now ON, and the host is named as the person to advise.
+	for _, want := range []string{`"meeting_url":"https://m/x"`, `"external_meeting_id":"m1"`, `"title":"Weekly"`, `"sales":{"enabled":true`, `"salesman":["Harshini"]`} {
 		if !strings.Contains(createBody, want) {
 			t.Errorf("create body missing %s: %s", want, createBody)
 		}
+	}
+
+	// Live suggestions: rows mapped to Honco suggestions; empty text dropped;
+	// no token is a no-op (not an error).
+	sugs, serr := h.Suggestions("s-active", "tok")
+	if serr != nil || len(sugs) != 1 {
+		t.Fatalf("suggestions: %v %+v", serr, sugs)
+	}
+	if sugs[0].ID != "sg1" || sugs[0].Text != "Confirm the Friday deadline" || sugs[0].Kind != "next_best_question" ||
+		sugs[0].Title != "high" || sugs[0].Source != "copilot" || sugs[0].Status != "delivered" {
+		t.Errorf("suggestion mapped wrongly: %+v", sugs[0])
+	}
+	if s2, e2 := h.Suggestions("s-active", ""); e2 != nil || s2 != nil {
+		t.Errorf("no token should be a no-op, got %v %+v", e2, s2)
 	}
 	if _, err := h.StartSession(AIStartRequest{MeetingID: "m2"}); !errors.Is(err, errAIRefused) {
 		t.Fatalf("no URL must be refused before any call, got %v", err)

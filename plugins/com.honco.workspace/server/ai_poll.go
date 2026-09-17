@@ -99,6 +99,15 @@ func (p *Plugin) aiPollBot(meetingID, sessionID string) {
 			}})
 		}
 
+		// While the call is live, pull the co-pilot's suggestions and feed
+		// them through the same ingest path as everything else. aiIngest
+		// drops any suggestion whose id was already seen (RecentEvents), so
+		// re-fetching the whole list every tick surfaces each suggestion in
+		// the AI Assistant panel exactly once, live, as it is produced.
+		if st.Status == AIStatusLive {
+			p.aiPollSuggestions(m, meetingID, sessionID)
+		}
+
 		switch st.Status {
 		case AIStatusCompleted:
 			p.aiFetchFinal(m, sessionID)
@@ -115,6 +124,37 @@ func (p *Plugin) aiPollBot(meetingID, sessionID string) {
 		}
 	}
 	p.client.Log.Warn("honco ai: poller gave up waiting for the bot", "meeting_id", meetingID)
+}
+
+// aiPollSuggestions pulls the live co-pilot suggestions for one poll tick and
+// ingests any that are new. The per-meeting copilot token is read from its
+// own KV key and never leaves the server. Transient fetch errors are ignored
+// (the next tick retries); the bot's own cooldown/fingerprinting already
+// prevents duplicate suggestions being generated.
+func (p *Plugin) aiPollSuggestions(m *Meeting, meetingID, sessionID string) {
+	token := p.loadCopilotToken(meetingID)
+	if token == "" {
+		return // co-pilot not enabled for this meeting
+	}
+	sugs, err := p.aiService().Suggestions(sessionID, token)
+	if err != nil || len(sugs) == 0 {
+		return
+	}
+	events := make([]aiEvent, 0, len(sugs))
+	for _, sg := range sugs {
+		events = append(events, aiEvent{
+			Type:      AIEventSuggestion,
+			ID:        sg.ID, // dedup key: aiIngest drops an id it has seen
+			Kind:      sg.Kind,
+			Title:     sg.Title,
+			Text:      sg.Text,
+			Source:    sg.Source,
+			Status:    sg.Status,
+			SessionID: sessionID,
+			At:        nowMillis(),
+		})
+	}
+	p.aiIngestSynthetic(m, events)
 }
 
 // aiFetchFinal pulls the transcript and the summary once the bot is done,
