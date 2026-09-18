@@ -84,12 +84,34 @@ _lock = threading.Lock()
 
 
 # --------------------------------------------------------------------------- state
-def load():
+def _load_file(path):
+    """Read a JSON list, telling 'missing' apart from 'corrupt'.
+
+    Missing is normal (nothing scheduled yet) -> []. Unreadable is not: a
+    single bad byte used to be swallowed here and then written back as [] by
+    the next save(), destroying every pending item silently. Now the bad file
+    is preserved as <path>.corrupt-<timestamp> and the loss is logged loudly,
+    so an operator can recover the queue by hand.
+    """
     try:
-        with open(STATE) as f:
+        with open(path) as f:
             return json.load(f)
-    except (OSError, ValueError):
+    except FileNotFoundError:
         return []
+    except (OSError, ValueError) as e:
+        try:
+            backup = "%s.corrupt-%s" % (path, datetime.now().strftime("%Y%m%d-%H%M%S"))
+            os.replace(path, backup)
+            log("ERROR: %s is unreadable (%s) -- preserved as %s; queue reset to empty"
+                % (path, e, backup))
+        except OSError as move_err:
+            log("ERROR: %s is unreadable (%s) and could NOT be preserved (%s)"
+                % (path, e, move_err))
+        return []
+
+
+def load():
+    return _load_file(STATE)
 
 
 def save(items):
@@ -101,11 +123,7 @@ def save(items):
 
 
 def load_history():
-    try:
-        with open(HISTORY) as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return []
+    return _load_file(HISTORY)
 
 
 def record_history(entry):
@@ -200,11 +218,35 @@ def room_url(name):
     return "%s/%s-%s" % (MEET_BASE.rstrip("/"), name, os.urandom(3).hex())
 
 
+def safe_topic(t):
+    """A meeting topic is user text. Keep it from turning into a real
+    channel-wide @mention, and from breaking the fenced code block the message
+    is built around, before interpolating it into a post. Only the message
+    text is sanitised -- the stored topic, the slug and the plugin payload keep
+    the raw text."""
+    return (t or "").replace("`", "").replace("@", "@​")
+
+
 WHEN_RE = re.compile(
     r"^\s*(?:in\s+(?P<rel>\d+)\s*(?P<unit>m|min|mins|minute|minutes|h|hr|hrs|hour|hours)"
-    r"|at\s+(?P<hh>\d{1,2})[:.](?P<mm>\d{2}))\s+(?P<rest>.*)$",
+    r"|at\s+(?P<hh>\d{1,2})[:.](?P<mm>\d{2}))(?:\s+(?P<rest>.*))?$",
     re.I,
 )
+
+# Text that is clearly an attempt to schedule (starts with "in <digit>" or
+# "at <digit>") but does not parse cleanly is answered with usage help rather
+# than silently becoming an instant meeting named after the bad input.
+WHEN_LEAD_RE = re.compile(r"^\s*(?:in\s+[-+]?\d|at\s+\d)", re.I)
+
+WHEN_USAGE = (
+    ":warning: I couldn't read that time. Try `/meet in 30m <name>` or "
+    "`/meet at 15:00 <name>` (24-hour clock, minutes zero-padded), or "
+    "`/meet <name>` to start right now."
+)
+
+# Relative offsets are clamped so an absurd value cannot overflow the date
+# arithmetic and leak a raw Python error to the user.
+MAX_SCHEDULE_DAYS = 365
 
 
 def parse_when(text):
@@ -213,18 +255,23 @@ def parse_when(text):
     if not m:
         return None, (text or "").strip()
     now = datetime.now()
+    rest = (m.group("rest") or "").strip()
     if m.group("rel"):
         n = int(m.group("rel"))
         unit = m.group("unit").lower()
         delta = timedelta(hours=n) if unit.startswith("h") else timedelta(minutes=n)
-        return now + delta, m.group("rest").strip()
+        # Clamp instead of overflowing: an absurd offset is out-of-range input,
+        # answered with usage help, not a traceback.
+        if delta > timedelta(days=MAX_SCHEDULE_DAYS):
+            return None, (text or "").strip()
+        return now + delta, rest
     hh, mm = int(m.group("hh")), int(m.group("mm"))
     if not (0 <= hh < 24 and 0 <= mm < 60):
         return None, (text or "").strip()
     when = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
     if when <= now:
         when += timedelta(days=1)      # "at 09:00" said at 10am means tomorrow
-    return when, m.group("rest").strip()
+    return when, rest
 
 
 def log(msg):
@@ -292,7 +339,7 @@ def scheduler():
                 sent = post_to_channel(
                     i["channel_id"],
                     "@channel :bell: **%s** starts now — [join the meeting](%s)\n_scheduled by @%s_\n%s"
-                    % (i["topic"], i["url"], i["user"], link_block(i["url"])),
+                    % (safe_topic(i["topic"]), i["url"], i["user"], link_block(i["url"])),
                 )
                 if sent:
                     log("reminder sent: %s (%s)" % (i["id"], i["topic"]))
@@ -462,7 +509,7 @@ def schedule_meeting(channel_id, channel_name, user, text, user_id=""):
         })
         return url, (
             ":movie_camera: **%s** — [join the meeting](%s)\n_started by @%s_\n%s"
-            % (topic, url, user, link_block(url))
+            % (safe_topic(topic), url, user, link_block(url))
         ), None
 
     item = {
@@ -476,7 +523,7 @@ def schedule_meeting(channel_id, channel_name, user, text, user_id=""):
     return url, (
         ":calendar: **%s** scheduled for **%s** — [join the meeting](%s)\n"
         "_by @%s · a reminder will land here · cancel with_ `/meet cancel %s`\n%s"
-        % (topic, when.strftime("%a %d %b, %H:%M"), url, user, item["id"], link_block(url))
+        % (safe_topic(topic), when.strftime("%a %d %b, %H:%M"), url, user, item["id"], link_block(url))
     ), item["id"]
 
 
@@ -504,15 +551,17 @@ def handle(form):
 
     if text.lower() in ("schedule", "start"):
         # Interactive Dialogs need trigger_id, which only exists on the
-        # original slash-command POST -- if this ever gets reached from
-        # somewhere without one (defensive; Mattermost always sends it),
-        # fail into the same plain-text path rather than a dead button.
+        # original slash-command POST. If it is present we open the form; if it
+        # is missing (an integration or a replayed request; Mattermost itself
+        # always sends one) or the open fails, we answer with usage help --
+        # never fall through and start an instant meeting literally named
+        # "schedule"/"start".
         if trigger_id:
             opened = open_dialog(trigger_id, channel_id, channel_name)
             if opened is not None:
                 return ephemeral("")  # the dialog itself is the response
             log("open_dialog failed for channel %s" % channel_id)
-            return ephemeral(":warning: Could not open the scheduling form (chat server unreachable). Try `/meet in 30m <name>` instead.")
+        return ephemeral(":warning: Could not open the scheduling form. Try `/meet in 30m <name>` or `/meet at 15:00 <name>` instead.")
 
     if text.lower() == "list":
         with _lock:
@@ -543,14 +592,23 @@ def handle(form):
                 STATUS_LABEL.get(i.get("status"), i.get("status", "?"))))
         return ephemeral("\n".join(lines))
 
-    if text.lower().startswith("cancel"):
-        wanted = text.split(None, 1)[1].strip() if " " in text else ""
+    if text.lower().split()[:1] == ["cancel"]:
+        parts = text.split(None, 1)
+        wanted = parts[1].strip() if len(parts) > 1 else ""
         if not wanted:
             return ephemeral("Usage: `/meet cancel <id>` — see the id in `/meet list`.")
         cancelled_item = cancel_meeting(wanted, channel_id)
         if cancelled_item:
             return ephemeral("Cancelled **%s**." % cancelled_item["topic"])
         return ephemeral("No such id in this channel. Check `/meet list` for current ids.")
+
+    # A clear scheduling attempt ("in 30m ...", "at 15:00 ...") that does not
+    # parse is answered with usage help rather than silently opening an instant
+    # meeting named after the bad time.
+    if WHEN_LEAD_RE.match(text):
+        when, _ = parse_when(text)
+        if when is None:
+            return ephemeral(WHEN_USAGE)
 
     url, message, item_id = schedule_meeting(channel_id, channel_name, user, text, user_id)
     # No Copy Link button: the URL is already in the message above as a

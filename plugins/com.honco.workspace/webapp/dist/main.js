@@ -430,6 +430,23 @@
         '.hw :focus-visible{outline:2px solid var(--button-bg);outline-offset:1px}',
         '.hw-tab:focus-visible{outline-offset:-2px}',
         '@media (prefers-reduced-motion:reduce){.hw *,.hw-card,.hw-fade,.hw-skeleton i{animation:none!important;transition:none!important}}',
+        // The in-meeting side-by-side surface: Jitsi on the left, the existing
+        // Honco AI Assistant on the right. A full-window overlay so it does not
+        // disturb the channel underneath, which stays exactly as it was.
+        '.hw-ms{position:fixed;inset:0;z-index:1000;display:flex;background:var(--center-channel-bg);color:var(--center-channel-color)}',
+        '.hw-ms-main{flex:1;min-width:0;display:flex;flex-direction:column}',
+        '.hw-ms-head{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid rgba(var(--center-channel-color-rgb),.12);background:var(--center-channel-bg)}',
+        '.hw-ms-title{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+        '.hw-ms-jitsi{flex:1;min-height:0;background:#040404}',
+        '.hw-ms-jitsi iframe{width:100%;height:100%;border:0;display:block}',
+        '.hw-ms-error{flex:1;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;padding:24px;text-align:center}',
+        '.hw-ms-side{width:400px;max-width:44vw;border-left:1px solid rgba(var(--center-channel-color-rgb),.12);display:flex;flex-direction:column;min-height:0;overflow:hidden;background:rgba(var(--center-channel-color-rgb),.02)}',
+        '.hw-ms-side .hw-aiwrap{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}',
+        // The reused AIPanel fills the pane and scrolls inside it, so the
+        // meeting header/controls stay put while notes and cards flow.
+        '.hw-ms-side .hw-ai{flex:1;min-height:0;display:flex;flex-direction:column}',
+        '.hw-ms-side .hw-ai>.hw-list{flex:1;min-height:0;overflow-y:auto}',
+        '@media (max-width:900px){.hw-ms{flex-direction:column}.hw-ms-side{width:auto;max-width:none;height:46%;border-left:0;border-top:1px solid rgba(var(--center-channel-color-rgb),.12)}}',
     ].join('\n');
 
     function ensureStyles() {
@@ -1855,6 +1872,18 @@
                     target: '_blank',
                     rel: 'noopener noreferrer',
                     'data-meeting-join': m.id,
+                    onClick: function (ev) {
+                        // The link's href/target keep working as the fallback:
+                        // a modified click (new tab), a middle-click, or a build
+                        // where the surface did not register all open the
+                        // external Jitsi tab exactly as before.
+                        if (!window.HoncoMeetingSurfaceReady || ev.metaKey || ev.ctrlKey ||
+                            ev.shiftKey || ev.altKey || ev.button === 1) {
+                            return;
+                        }
+                        ev.preventDefault();
+                        window.HoncoOpenMeetingSurface(m, join);
+                    },
                 }, 'Join') : null,
             ]);
         }
@@ -2226,7 +2255,13 @@
         }));
     }
 
-    function AIPanel() {
+    function AIPanel(props) {
+        // props.meetingId (optional): when the panel is embedded in the meeting
+        // surface it is told exactly which meeting to show, instead of guessing
+        // the active one for the current channel. The RHS usage passes nothing
+        // and behaves exactly as before.
+        props = props || {};
+        var forcedMeetingId = props.meetingId || '';
         var channelId = null;
         try {
             channelId = window.store ? window.store.getState().entities.channels.currentChannelId : null;
@@ -2242,7 +2277,7 @@
         var ml = m0[0];
         var setMl = m0[1];
 
-        var sel0 = React.useState('');
+        var sel0 = React.useState(forcedMeetingId);
         var selected = sel0[0];
         var setSelected = sel0[1];
 
@@ -2286,6 +2321,11 @@
                 var list = (res.data && res.data.meetings) || [];
                 setMl({loading: false, meetings: list, error: null});
                 setSelected(function (cur) {
+                    // An embedded panel is pinned to its meeting whenever that
+                    // meeting is in the list; it never silently switches away.
+                    if (forcedMeetingId && list.some(function (m) { return m.id === forcedMeetingId; })) {
+                        return forcedMeetingId;
+                    }
                     if (cur && list.some(function (m) { return m.id === cur; })) {
                         return cur;
                     }
@@ -2711,13 +2751,18 @@
         // ---- body -----------------------------------------------------------
 
         var body;
-        if (!channelId) {
+        // When embedded in the meeting surface the panel is pinned to one
+        // meeting (forcedMeetingId) and loads that session directly, so the
+        // channel-list gates below -- which exist only to choose a meeting for
+        // the current channel -- are skipped. Everything after (loading the
+        // session, errors, the live content) is shared with the RHS usage.
+        if (!channelId && !forcedMeetingId) {
             body = e(EmptyState, {icon: 'creation-outline', title: 'No channel open'}, 'Open a channel to see its meetings.');
-        } else if (ml.loading || (st.loading && !session)) {
+        } else if ((!forcedMeetingId && ml.loading) || (st.loading && !session)) {
             body = e(Loading, {label: 'Loading assistant'});
-        } else if (ml.error) {
+        } else if (!forcedMeetingId && ml.error) {
             body = e(ErrorNote, {}, ml.error);
-        } else if (!ml.meetings.length) {
+        } else if (!forcedMeetingId && !ml.meetings.length) {
             body = e(EmptyState, {icon: 'video-outline', title: 'No active meeting found'},
                 'Start a call with /meet in this channel. The assistant becomes available when the meeting begins.');
         } else if (st.error) {
@@ -2831,10 +2876,10 @@
                 e('div', {key: 'none', className: 'hw-ai-card hw-ai-card-empty'}, [
                     e('div', {key: 'h', className: 'hw-ai-card-head'}, [
                         e(Icon, {key: 'i', name: 'lightbulb-outline'}),
-                        e('span', {key: 'k', className: 'hw-ai-card-kind'}, 'Sales suggestion'),
+                        e('span', {key: 'k', className: 'hw-ai-card-kind'}, 'AI suggestion'),
                     ]),
                     e('div', {key: 'q', className: 'hw-ai-quiet'}, props.status === 'live'
-                        ? 'Listening for the conversation. Suggestions appear here as Honco AI sends them.'
+                        ? 'Listening to the meeting. Suggestions appear here as Honco AI sends them.'
                         : 'No suggestions yet.'),
                 ]),
             previous.length ? e('div', {key: 'prev'}, [
@@ -2869,7 +2914,7 @@
         }
 
         out.push(e(TranscriptBlock, {
-            key: 'tr', title: 'Live transcript', live: props.status === 'live', session: s,
+            key: 'tr', title: 'Live meeting notes', live: props.status === 'live', session: s,
             lines: props.lines, listRef: props.listRef, onScroll: props.onScroll, ui: props.ui, setUi: props.setUi,
             hasOlder: props.hasOlder, olderOnService: props.olderOnService, loadOlder: props.loadOlder,
             emptyText: props.status === 'live' ? 'Listening… the transcript appears here as Honco AI sends it.' : 'Transcript unavailable.',
@@ -4978,6 +5023,20 @@
                     href: card.join_url,
                     target: '_blank',
                     rel: 'noopener noreferrer',
+                    onClick: function (ev) {
+                        // Same behaviour as the meeting-list Join: open the
+                        // in-SPA surface, but let the href open the external tab
+                        // as the fallback on a modified click or if the surface
+                        // is not available.
+                        if (!window.HoncoMeetingSurfaceReady || ev.metaKey || ev.ctrlKey ||
+                            ev.shiftKey || ev.altKey || ev.button === 1) {
+                            return;
+                        }
+                        ev.preventDefault();
+                        window.HoncoOpenMeetingSurface(
+                            {id: card.meeting_id, topic: card.topic, room_name: card.room_name},
+                            card.join_url);
+                    },
                 }, [e(Icon, {key: 'i', name: 'video-outline'}), 'Join Meeting'])) : null,
 
             (card.recording_status === 'ready' || card.has_summary) ? e('div', {
@@ -5022,6 +5081,193 @@
     // --- Registration ------------------------------------------------------
 
     var Plugin = function () {};
+
+    // --- In-meeting side-by-side surface -----------------------------------
+    //
+    // A full-window overlay that embeds the SAME Jitsi call (as a plain iframe
+    // pointed at the meeting URL -- see buildJitsiIframeUrl for why not the
+    // External API) on the left, and the EXISTING AIPanel on the right, driven
+    // by its meetingId. No new AI code: the panel keeps
+    // its HoncoAIBus wiring, so the live suggestion/insight/final events that
+    // already work flow into it unchanged. The channel underneath is untouched;
+    // closing the surface returns the user exactly where they were.
+
+    var MeetingSurfaceIntent = {
+        state: {open: false, meetingId: null, joinUrl: null, topic: ''},
+        listeners: [],
+        subscribe: function (fn) {
+            this.listeners.push(fn);
+            var self = this;
+            return function () {
+                var i = self.listeners.indexOf(fn);
+                if (i >= 0) {
+                    self.listeners.splice(i, 1);
+                }
+            };
+        },
+        emit: function () {
+            var st = this.state;
+            this.listeners.forEach(function (fn) {
+                try {
+                    fn(st);
+                } catch (err) { /* one bad listener must not stop the rest */ }
+            });
+        },
+        open: function (meeting, joinUrl) {
+            meeting = meeting || {};
+            this.state = {
+                open: true,
+                meetingId: meeting.id || null,
+                joinUrl: joinUrl || null,
+                topic: meeting.topic || meeting.room_name || 'Meeting',
+            };
+            this.emit();
+        },
+        close: function () {
+            this.state = {open: false, meetingId: null, joinUrl: null, topic: ''};
+            this.emit();
+        },
+    };
+
+    // Turn a Honco join URL into the src for a plain <iframe>.
+    //
+    // Why a plain iframe and not JitsiMeetExternalAPI: Mattermost serves the SPA
+    // with `script-src 'self' ...`, which blocks loading external_api.js from the
+    // Jitsi origin (a cross-origin script). The same CSP sets no frame-src /
+    // child-src / default-src, so framing the Jitsi origin directly is allowed,
+    // and Jitsi itself sends no X-Frame-Options. So the call is embedded as an
+    // iframe pointed straight at the meeting URL; the prejoin screen is skipped
+    // via config in the hash so it joins immediately.
+    function buildJitsiIframeUrl(joinUrl) {
+        try {
+            var u = new URL(joinUrl);
+            if (!u.pathname || u.pathname === '/') {
+                return null;
+            }
+            var cfg = 'config.prejoinPageEnabled=false&config.prejoinConfig.enabled=false';
+            var existing = u.hash ? u.hash.replace(/^#/, '') : '';
+            u.hash = existing ? existing + '&' + cfg : cfg;
+            return u.toString();
+        } catch (err) {
+            return null;
+        }
+    }
+
+    // The Jitsi origin for a join URL, used to match its postMessage hang-up
+    // events (best effort; a plain iframe has no External API instance).
+    function jitsiOriginOf(joinUrl) {
+        try {
+            return new URL(joinUrl).origin;
+        } catch (err) {
+            return null;
+        }
+    }
+
+    function MeetingSurface() {
+        var s0 = React.useState(MeetingSurfaceIntent.state);
+        var state = s0[0];
+        var setState = s0[1];
+
+        React.useEffect(function () {
+            return MeetingSurfaceIntent.subscribe(function (st) {
+                setState(Object.assign({}, st));
+            });
+        }, []);
+
+        ensureStyles();
+
+        var closeSurface = React.useCallback(function () {
+            // Closing unmounts the iframe (React removes it), which tears down
+            // the call and its media. No External API instance to dispose.
+            MeetingSurfaceIntent.close();
+        }, []);
+
+        var iframeUrl = state.open && state.joinUrl ? buildJitsiIframeUrl(state.joinUrl) : null;
+
+        // A malformed join URL cannot be embedded: fall back to the external
+        // tab immediately rather than showing a blank frame.
+        React.useEffect(function () {
+            if (state.open && state.joinUrl && !iframeUrl) {
+                window.open(state.joinUrl, '_blank', 'noopener');
+                MeetingSurfaceIntent.close();
+            }
+        }, [state.open, state.joinUrl, iframeUrl]);
+
+        // Best effort: some Jitsi builds postMessage a hang-up to the parent
+        // even without the External API. If one arrives from the meeting's
+        // origin, close the surface. Leave/Esc remain the reliable path.
+        React.useEffect(function () {
+            if (!state.open || !state.joinUrl) {
+                return undefined;
+            }
+            var origin = jitsiOriginOf(state.joinUrl);
+            var onMsg = function (ev) {
+                if (origin && ev.origin === origin) {
+                    var d = ev.data;
+                    var s = typeof d === 'string' ? d : (d && (d.type || d.name || ''));
+                    if (/readyToClose|hangup|video-conference-left|videoConferenceLeft/i.test(String(s))) {
+                        closeSurface();
+                    }
+                }
+            };
+            window.addEventListener('message', onMsg);
+            return function () {
+                window.removeEventListener('message', onMsg);
+            };
+        }, [state.open, state.joinUrl, closeSurface]);
+
+        // Esc leaves, matching the visible Leave control.
+        React.useEffect(function () {
+            if (!state.open) {
+                return undefined;
+            }
+            var onKey = function (ev) {
+                if (ev.key === 'Escape') {
+                    closeSurface();
+                }
+            };
+            window.addEventListener('keydown', onKey);
+            return function () {
+                window.removeEventListener('keydown', onKey);
+            };
+        }, [state.open, closeSurface]);
+
+        if (!state.open) {
+            return null;
+        }
+
+        return e('div', {className: 'hw-ms', role: 'dialog', 'aria-modal': true, 'aria-label': 'Meeting: ' + state.topic}, [
+            e('div', {key: 'main', className: 'hw-ms-main'}, [
+                e('div', {key: 'head', className: 'hw-ms-head'}, [
+                    e('span', {key: 't', className: 'hw-ms-title'}, state.topic),
+                    e('span', {key: 'sp', style: {flex: 1}}),
+                    e('a', {
+                        key: 'ext',
+                        className: 'hw-btn hw-btn-ghost hw-btn-sm',
+                        href: state.joinUrl,
+                        target: '_blank',
+                        rel: 'noopener noreferrer',
+                        title: 'Open this meeting in a new Jitsi tab',
+                    }, 'Open in tab'),
+                    e('button', {
+                        key: 'x',
+                        type: 'button',
+                        className: 'hw-btn hw-btn-sm',
+                        onClick: closeSurface,
+                        'aria-label': 'Leave meeting',
+                    }, [e(Icon, {key: 'i', name: 'close'}), 'Leave']),
+                ]),
+                e('div', {key: 'jitsi', className: 'hw-ms-jitsi'}, iframeUrl ? e('iframe', {
+                    title: 'Jitsi meeting',
+                    src: iframeUrl,
+                    allow: 'camera; microphone; fullscreen; display-capture; autoplay; clipboard-write; speaker-selection',
+                    allowFullScreen: true,
+                }) : null),
+            ]),
+            e('div', {key: 'side', className: 'hw-ms-side'},
+                e('div', {className: 'hw hw-aiwrap'}, e(AIPanel, {meetingId: state.meetingId}))),
+        ]);
+    }
 
     Plugin.prototype.initialize = function (registry, store) {
         // Kept for the panel to read the current team/user from the
@@ -5096,6 +5342,44 @@
                     });
                 });
             } catch (err) { /* older webapp without the hook: the panel still re-reads on open */ }
+        }
+
+        // The in-meeting side-by-side surface, mounted once so it can cover the
+        // window when a meeting is joined. It is the SAME AIPanel and the SAME
+        // AI WebSocket pipeline; only the placement is new.
+        //
+        // This build accepts registry.registerRootComponent but does not render
+        // plugin root components, so the surface is mounted onto our own React
+        // root attached to a body container (the webapp exposes window.ReactDOM).
+        // If ReactDOM is unavailable, HoncoMeetingSurfaceReady stays false and
+        // every Join link falls back to the external Jitsi tab, unchanged.
+        try {
+            var RD = window.ReactDOM;
+            if (RD && (RD.createRoot || RD.render) && !document.getElementById('honco-meeting-surface-root')) {
+                var host = document.createElement('div');
+                host.id = 'honco-meeting-surface-root';
+                document.body.appendChild(host);
+                // Mount inside Mattermost's own Redux provider (never a second
+                // store) so the reused AIPanel sees the same store, websocket
+                // and re-render context it has in the RHS. The panel already
+                // reads window.store directly, so this is belt-and-suspenders
+                // for any child that relies on react-redux context.
+                var tree = e(MeetingSurface);
+                if (window.ReactRedux && window.ReactRedux.Provider) {
+                    tree = e(window.ReactRedux.Provider, {store: store}, tree);
+                }
+                if (RD.createRoot) {
+                    RD.createRoot(host).render(tree);
+                } else {
+                    RD.render(tree, host);
+                }
+                window.HoncoOpenMeetingSurface = function (meeting, joinUrl) {
+                    MeetingSurfaceIntent.open(meeting, joinUrl);
+                };
+                window.HoncoMeetingSurfaceReady = true;
+            }
+        } catch (err) {
+            window.HoncoMeetingSurfaceReady = false;
         }
 
         // The App Bar is where current Mattermost surfaces plugin entry

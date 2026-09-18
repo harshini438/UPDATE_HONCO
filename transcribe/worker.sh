@@ -64,6 +64,11 @@ while true; do
             if [ -x "$ROOT/post-to-chat.sh" ] && [ -s "$ROOT/chat.env" ]; then
                 "$ROOT/post-to-chat.sh" "$dir" >>"$ROOT/logs/$name.log" 2>&1 \
                     || log "post-to-chat failed for $name"
+            else
+                # Make the missing hand-off visible rather than skipping it in
+                # silence: post-to-chat.sh does not ship in the repo, so without
+                # this line the transcript quietly stops one hop short of chat.
+                log "post-to-chat not configured for $name (no post-to-chat.sh / chat.env) -- transcript left in $dir"
             fi
             log "done $name"
         else

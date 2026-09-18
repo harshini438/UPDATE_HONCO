@@ -53,6 +53,11 @@ func (p *Plugin) aiPollBot(meetingID, sessionID string) {
 	deadline := time.Now().Add(aiPollMaxAge)
 	lastStatus := ""
 	lastErr := ""
+	// The bot's own segment sequence, exclusive: -1 means "from the first
+	// thing said". It advances as the live transcript is pulled, so each
+	// segment is ingested exactly once and the final fetch picks up only
+	// what the live poll had not yet seen.
+	transcriptAfter := int64(-1)
 
 	for time.Now().Before(deadline) {
 		select {
@@ -106,11 +111,15 @@ func (p *Plugin) aiPollBot(meetingID, sessionID string) {
 		// the AI Assistant panel exactly once, live, as it is produced.
 		if st.Status == AIStatusLive {
 			p.aiPollSuggestions(m, meetingID, sessionID)
+			// Live meeting notes: the actual transcript, streamed in as it is
+			// spoken, so the panel's notes track the real conversation rather
+			// than waiting for the end-of-meeting summary.
+			transcriptAfter = p.aiPollTranscript(m, sessionID, transcriptAfter)
 		}
 
 		switch st.Status {
 		case AIStatusCompleted:
-			p.aiFetchFinal(m, sessionID)
+			p.aiFetchFinal(m, sessionID, transcriptAfter)
 			return
 		case AIStatusFailed:
 			p.aiIngestSynthetic(m, []aiEvent{{
@@ -166,9 +175,42 @@ func (p *Plugin) aiPollSuggestions(m *Meeting, meetingID, sessionID string) {
 	p.aiIngestSynthetic(m, events)
 }
 
+// aiPollTranscript pulls the transcript segments the bot has produced since
+// `after` (its own segment sequence) and ingests them as one transcript event,
+// live. It returns the new high-water mark so the next tick asks only for what
+// came after. Dedup is by that cursor: a segment is fetched, ingested and
+// counted once. The bot owns transcription; this only relays it.
+func (p *Plugin) aiPollTranscript(m *Meeting, sessionID string, after int64) int64 {
+	lines, err := p.aiService().Transcript(sessionID, after, aiMaxEventsPerPush)
+	if err != nil {
+		p.client.Log.Warn("honco ai: transcript poll failed", "meeting_id", m.ID, "err", redactErr(err))
+		return after
+	}
+	if len(lines) == 0 {
+		return after
+	}
+	// The bot's Sequence rides on each line (ai_adapter maps it); read the high
+	// water mark before ingest, because ingest reassigns Seq to Honco's own.
+	next := after
+	for _, l := range lines {
+		if l.Seq > next {
+			next = l.Seq
+		}
+	}
+	p.aiIngestSynthetic(m, []aiEvent{{
+		Type:      AIEventTranscript,
+		Lines:     lines,
+		SessionID: sessionID,
+		At:        nowMillis(),
+	}})
+	return next
+}
+
 // aiFetchFinal pulls the transcript and the summary once the bot is done,
-// and stores the summary where Meeting Intelligence reads it.
-func (p *Plugin) aiFetchFinal(m *Meeting, sessionID string) {
+// and stores the summary where Meeting Intelligence reads it. transcriptAfter
+// is the cursor the live poll reached, so the final fetch adds only the tail
+// the live stream had not yet pulled rather than the whole transcript again.
+func (p *Plugin) aiFetchFinal(m *Meeting, sessionID string, transcriptAfter int64) {
 	now := nowMillis()
 	var events []aiEvent
 
@@ -180,7 +222,7 @@ func (p *Plugin) aiFetchFinal(m *Meeting, sessionID string) {
 	// after = -1, not 0: `after` is an EXCLUSIVE lower bound on the bot's
 	// segment sequence, and the bot numbers segments from 0. Passing 0
 	// would drop segment 0 -- the first thing anyone said in the meeting.
-	lines, terr := p.aiService().Transcript(sessionID, -1, aiMaxTranscriptLines)
+	lines, terr := p.aiService().Transcript(sessionID, transcriptAfter, aiMaxTranscriptLines)
 	if terr != nil {
 		p.client.Log.Warn("honco ai: transcript fetch", "meeting_id", m.ID, "err", redactErr(terr))
 	}

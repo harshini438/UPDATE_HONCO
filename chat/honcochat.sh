@@ -139,6 +139,11 @@ start_svc() {
 stop_svc() {
     if svc_up; then
         kill "$(cat "$SVCPID")" 2>/dev/null || true
+        # Wait for the process to actually release :8077 before returning, so
+        # an immediate `start` does not race the dying meetsvc for the port
+        # (which failed the restart and left /meet down). Mirrors stop_app.
+        for _ in $(seq 1 20); do svc_up || break; sleep 1; done
+        svc_up && kill -9 "$(cat "$SVCPID")" 2>/dev/null || true
         echo "meetsvc:   stopped"
     else
         echo "meetsvc:   not running"
