@@ -386,6 +386,7 @@ func (h *httpAIService) Suggestions(sessionID, token string) ([]AISuggestion, er
 			Text:   text,
 			Source: "copilot",
 			Status: strings.TrimSpace(r.Status),
+			Reason: strings.TrimSpace(r.Reason),
 		})
 	}
 	return out, nil

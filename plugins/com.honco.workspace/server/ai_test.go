@@ -294,8 +294,14 @@ func TestHTTPAIServiceMapsResponses(t *testing.T) {
 		t.Fatalf("suggestions: %v %+v", serr, sugs)
 	}
 	if sugs[0].ID != "sg1" || sugs[0].Text != "Confirm the Friday deadline" || sugs[0].Kind != "next_best_question" ||
-		sugs[0].Title != "high" || sugs[0].Source != "copilot" || sugs[0].Status != "delivered" {
+		sugs[0].Title != "high" || sugs[0].Source != "copilot" || sugs[0].Status != "delivered" ||
+		sugs[0].Reason != "they asked" {
 		t.Errorf("suggestion mapped wrongly: %+v", sugs[0])
+	}
+	// The reason rides along so the live poll can surface it as an Insight.
+	if copilotInsightKind("RISK") != "concern" || copilotInsightKind("BUYING_SIGNAL") != "opportunity" ||
+		copilotInsightKind("next_best_question") != "insight" {
+		t.Errorf("copilotInsightKind mapping wrong")
 	}
 	if s2, e2 := h.Suggestions("s-active", ""); e2 != nil || s2 != nil {
 		t.Errorf("no token should be a no-op, got %v %+v", e2, s2)

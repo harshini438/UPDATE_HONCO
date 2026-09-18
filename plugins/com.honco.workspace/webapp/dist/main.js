@@ -2872,6 +2872,7 @@
         }
 
         out.push(e('div', {key: 'sugg', className: 'hw-ai-block hw-ai-block-primary'}, [
+            e('div', {key: 'sh', className: 'hw-ai-block-title'}, [e(Icon, {key: 'i', name: 'lightbulb-outline'}), 'Suggestions']),
             latest ? e(SuggestionCard, {key: 'latest', suggestion: latest, latest: true, fresh: props.freshId === latest.id}) :
                 e('div', {key: 'none', className: 'hw-ai-card hw-ai-card-empty'}, [
                     e('div', {key: 'h', className: 'hw-ai-card-head'}, [
@@ -2896,14 +2897,16 @@
             ]) : null,
         ]));
 
-        if (insights.length || (s.topics || []).length) {
+        if (insights.length || (s.topics || []).length || props.status === 'live') {
             out.push(e('div', {key: 'ins', className: 'hw-ai-block'}, [
-                insights.length ? e('div', {key: 'h', className: 'hw-ai-block-title'}, [
-                    e(Icon, {key: 'i', name: 'lightning-bolt-outline'}), 'Insights',
-                ]) : null,
+                e('div', {key: 'h', className: 'hw-ai-block-title'}, [
+                    e(Icon, {key: 'i', name: 'magnify'}), 'Insights',
+                ]),
                 insights.length ? e('div', {key: 'rows', className: 'hw-ai-insights'}, insights.map(function (x) {
                     return e(InsightRow, {key: x.id, insight: x});
-                })) : null,
+                })) : e('div', {key: 'q', className: 'hw-ai-quiet'}, props.status === 'live'
+                    ? 'Observations from the conversation appear here as they emerge.'
+                    : 'No insights yet.'),
                 (s.topics || []).length ? e('div', {key: 'th', className: 'hw-ai-block-title', style: {marginTop: insights.length ? 10 : 0}}, [
                     e(Icon, {key: 'i', name: 'star-outline'}), 'Topics',
                 ]) : null,

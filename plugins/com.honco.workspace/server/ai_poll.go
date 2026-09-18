@@ -135,11 +135,28 @@ func (p *Plugin) aiPollBot(meetingID, sessionID string) {
 	p.client.Log.Warn("honco ai: poller gave up waiting for the bot", "meeting_id", meetingID)
 }
 
-// aiPollSuggestions pulls the live co-pilot suggestions for one poll tick and
-// ingests any that are new. The per-meeting copilot token is read from its
-// own KV key and never leaves the server. Transient fetch errors are ignored
-// (the next tick retries); the bot's own cooldown/fingerprinting already
-// prevents duplicate suggestions being generated.
+// copilotInsightKind maps the co-pilot's card type to a neutral, topic-agnostic
+// insight kind the panel already knows how to render. Anything unrecognised
+// becomes a plain "insight"; nothing here invents content -- the observation
+// text is always the co-pilot's own reason.
+func copilotInsightKind(cardType string) string {
+	switch strings.ToLower(strings.TrimSpace(cardType)) {
+	case "risk", "pain_point":
+		return "concern"
+	case "buying_signal", "interest":
+		return "opportunity"
+	default:
+		return "insight"
+	}
+}
+
+// aiPollSuggestions pulls the live co-pilot cards for one poll tick and ingests
+// any that are new. Each card yields a live Suggestion (the action) and, when
+// the co-pilot recorded a reason, a live Insight (the observation behind it) --
+// both derived from the real conversation, neither invented here. The
+// per-meeting copilot token is read from its own KV key and never leaves the
+// server. Transient fetch errors are ignored (the next tick retries); the bot's
+// own cooldown/fingerprinting already prevents duplicate cards being generated.
 func (p *Plugin) aiPollSuggestions(m *Meeting, meetingID, sessionID string) {
 	token := p.loadCopilotToken(meetingID)
 	if token == "" {
@@ -158,7 +175,7 @@ func (p *Plugin) aiPollSuggestions(m *Meeting, meetingID, sessionID string) {
 	if len(sugs) == 0 {
 		return
 	}
-	events := make([]aiEvent, 0, len(sugs))
+	events := make([]aiEvent, 0, len(sugs)*2)
 	for _, sg := range sugs {
 		events = append(events, aiEvent{
 			Type:      AIEventSuggestion,
@@ -171,6 +188,20 @@ func (p *Plugin) aiPollSuggestions(m *Meeting, meetingID, sessionID string) {
 			SessionID: sessionID,
 			At:        nowMillis(),
 		})
+		// The co-pilot's reason is a conversation-derived observation -- surface
+		// it as a live Insight beside the suggestion. A distinct id (":insight")
+		// keeps the built-in dedup from treating it as a replay of the card.
+		if reason := strings.TrimSpace(sg.Reason); reason != "" {
+			events = append(events, aiEvent{
+				Type:      AIEventInsight,
+				ID:        sg.ID + ":insight",
+				Kind:      copilotInsightKind(sg.Kind),
+				Text:      reason,
+				Source:    sg.Source,
+				SessionID: sessionID,
+				At:        nowMillis(),
+			})
+		}
 	}
 	p.aiIngestSynthetic(m, events)
 }

@@ -111,6 +111,10 @@ type AISuggestion struct {
 	Text   string `json:"text"`
 	Source string `json:"source,omitempty"` // e.g. the model or rule that produced it
 	Status string `json:"status,omitempty"` // e.g. "new", "used", "dismissed" if the service tracks it
+	// Reason is the co-pilot's own observation of why it produced this card --
+	// a topic-agnostic note derived from the conversation. Honco surfaces it as
+	// a live Insight; it is never invented here.
+	Reason string `json:"reason,omitempty"`
 }
 
 // AIInsight is a detected concern, sentiment or opportunity.
