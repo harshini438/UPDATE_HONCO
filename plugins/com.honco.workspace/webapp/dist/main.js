@@ -268,6 +268,27 @@
         '.hw-select{appearance:none;-webkit-appearance:none;padding-right:26px;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Cpath fill=%27%238b8fa3%27 d=%27M7 10l5 5 5-5z%27/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 6px center;background-size:16px}',
         '.hw-select-sm{width:auto;margin:0;padding:3px 24px 3px 8px;font-size:12px}',
         '.hw-check{display:inline-flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;margin:0}',
+        // Centered dialog for the Add-Members picker. Uses the same theme
+        // tokens as the rest of the panel, so it inverts under dark mode with
+        // everything else and needs no separate palette.
+        '.hw-modal-backdrop{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.44);padding:16px}',
+        '.hw-modal{width:420px;max-width:100%;max-height:82vh;display:flex;flex-direction:column;background:var(--center-channel-bg);color:var(--center-channel-color);border:1px solid rgba(var(--center-channel-color-rgb),.16);border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.28);overflow:hidden}',
+        '.hw-modal-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid rgba(var(--center-channel-color-rgb),.12);font-weight:600}',
+        '.hw-modal-head .hw-spacer{margin-left:auto}',
+        '.hw-modal-body{padding:12px 14px;overflow-y:auto;min-height:0}',
+        '.hw-modal-foot{display:flex;align-items:center;gap:8px;padding:12px 14px;border-top:1px solid rgba(var(--center-channel-color-rgb),.12)}',
+        '.hw-modal-foot .hw-spacer{margin-left:auto}',
+        '.hw-pick{display:flex;align-items:center;gap:10px;padding:7px 6px;border-radius:6px;cursor:pointer;font-size:13px}',
+        '.hw-pick:hover{background:rgba(var(--center-channel-color-rgb),.06)}',
+        '.hw-pick input{margin:0;flex:none}',
+        '.hw-pick.hw-pick-disabled{cursor:default;opacity:.6}',
+        '.hw-pick.hw-pick-disabled:hover{background:none}',
+        '.hw-pick-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+        // Files tab: a search box that grows to fill the toolbar, a small
+        // section heading, and the per-row Open/Download button group.
+        '.hw-file-search{flex:1 1 140px;min-width:100px;margin-bottom:0}',
+        '.hw-files-heading{padding:10px 12px 2px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:rgba(var(--center-channel-color-rgb),.56)}',
+        '.hw-file-actions{display:flex;gap:6px;flex:none;align-items:center}',
         '.hw-check input{margin:0;accent-color:var(--button-bg)}',
         '.hw-form{flex:none;padding:10px 12px;border-bottom:1px solid rgba(var(--center-channel-color-rgb),.12);background:rgba(var(--center-channel-color-rgb),.03)}',
         '.hw-form-label{font-size:12px;margin-bottom:4px;color:rgba(var(--center-channel-color-rgb),.72)}',
@@ -1259,6 +1280,62 @@
         }).catch(function () {
             return null;
         });
+    }
+
+    // Upload a file into a channel exactly the way Mattermost's own composer
+    // does: POST the bytes to get a file id, then create a post that carries
+    // it. Honco stores nothing and serves nothing -- the file lives in
+    // Mattermost's file store, which authorizes every later download itself,
+    // and the post is what makes it a real, listable attachment (a file with
+    // no post is a cancelled upload). X-Requested-With is Mattermost's CSRF
+    // gate for a cookie session, the same header the helpers above send.
+    function shareFileToChannel(channelId, file) {
+        var form = new FormData();
+        form.append('channel_id', channelId);
+        form.append('files', file, file.name);
+        return fetch('/api/v4/files', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {'X-Requested-With': 'XMLHttpRequest'},
+            body: form,
+        }).then(function (res) {
+            return res.json().catch(function () {
+                return null;
+            }).then(function (data) {
+                if (!res.ok || !data || !data.file_infos || !data.file_infos.length) {
+                    throw new Error((data && (data.message || data.detailed_error)) || 'The file could not be uploaded.');
+                }
+                var fileId = data.file_infos[0].id;
+                return fetch('/api/v4/posts', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+                    body: JSON.stringify({channel_id: channelId, message: '', file_ids: [fileId]}),
+                }).then(function (pres) {
+                    return pres.json().catch(function () {
+                        return null;
+                    }).then(function (pdata) {
+                        if (!pres.ok) {
+                            throw new Error((pdata && pdata.message) || 'The file uploaded but could not be shared to the channel.');
+                        }
+                        return fileId;
+                    });
+                });
+            });
+        });
+    }
+
+    // The channel the Files tab uploads into: the one the user is looking at.
+    // The Files panel is docked beside a channel, so "here" is the natural
+    // target, and naming it in the button leaves no doubt where a file lands.
+    function currentChannelForUpload() {
+        try {
+            var s = window.store.getState();
+            var id = s.entities.channels.currentChannelId;
+            return id ? s.entities.channels.channels[id] : null;
+        } catch (e) {
+            return null;
+        }
     }
 
     function formatWhen(ms) {
@@ -3803,21 +3880,32 @@
                 }, f.name || '(untitled)'),
                 e('div', {key: 'meta', className: 'hw-row-meta'}, meta),
             ]),
-            e('a', {
-                key: 'dl',
-                className: 'hw-btn hw-btn-secondary hw-btn-sm',
-                href: href + '?download=1',
-                // The `download` attribute (same-origin) plus the server's
-                // Content-Disposition: attachment makes the browser save the
-                // file in place. This deliberately does NOT open a new tab:
-                // a target="_blank" download is silently stopped by popup
-                // blockers and otherwise leaves a blank tab, which is what
-                // made downloads look broken. Mattermost still re-authorizes
-                // the request from the session cookie.
-                download: f.name || '',
-                'aria-label': 'Download ' + (f.name || 'file'),
-                'data-file-download': f.id,
-            }, [e(Icon, {key: 'i', name: 'download'}), 'Download']),
+            e('div', {key: 'act', className: 'hw-file-actions'}, [
+                // Open: same file route with no download hint, so Mattermost
+                // previews what it can (images, PDF) inline in a new tab and
+                // serves the rest as a download -- either way authorized again
+                // from the session cookie.
+                e('a', {
+                    key: 'open',
+                    className: 'hw-btn hw-btn-ghost hw-btn-sm',
+                    href: href,
+                    target: '_blank',
+                    rel: 'noopener noreferrer',
+                    'aria-label': 'Open ' + (f.name || 'file'),
+                    'data-file-open': f.id,
+                }, [e(Icon, {key: 'i', name: 'open-in-new'}), 'Open']),
+                // Download: the `download` attribute plus the server's
+                // Content-Disposition: attachment saves the file in place
+                // rather than opening a blank tab a popup blocker would stop.
+                e('a', {
+                    key: 'dl',
+                    className: 'hw-btn hw-btn-secondary hw-btn-sm',
+                    href: href + '?download=1',
+                    download: f.name || '',
+                    'aria-label': 'Download ' + (f.name || 'file'),
+                    'data-file-download': f.id,
+                }, [e(Icon, {key: 'i', name: 'download'}), 'Download']),
+            ]),
         ]);
     }
 
@@ -3828,6 +3916,13 @@
         var k0 = React.useState('all');
         var kind = k0[0];
         var setKind = k0[1];
+        var u0 = React.useState({busy: false, error: null});
+        var up = u0[0];
+        var setUp = u0[1];
+        var q0 = React.useState('');
+        var query = q0[0];
+        var setQuery = q0[1];
+        var fileInputRef = React.useRef(null);
 
         var PAGE = 25;
 
@@ -3860,12 +3955,46 @@
                 });
         }, []);
 
+        // Upload from the Files tab. The file is shared into the channel the
+        // user is viewing (the panel is docked to it), then the list reloads
+        // so the new file appears at the top -- the same row it would get had
+        // it been dropped in the composer, because that is exactly the path
+        // it took. Re-picking the same filename is allowed by clearing the
+        // input's value after each choice.
+        var doUpload = React.useCallback(function (file) {
+            if (!file) {
+                return;
+            }
+            var ch = currentChannelForUpload();
+            if (!ch || !ch.id) {
+                setUp({busy: false, error: 'Open a channel first — a file is uploaded into the channel you are viewing.'});
+                return;
+            }
+            setUp({busy: true, error: null});
+            shareFileToChannel(ch.id, file).then(function () {
+                setUp({busy: false, error: null});
+                load(0, false);
+            }).catch(function (err) {
+                setUp({busy: false, error: err.message || 'The file could not be uploaded.'});
+            });
+        }, [load]);
+
         React.useEffect(function () {
             load(0, false);
         }, [load]);
 
-        var shown = kind === 'all' ? state.files : state.files.filter(function (f) {
-            return f.kind === kind;
+        // Filter by type (the dropdown) and by a filename search, over the
+        // files already loaded -- the list is the most-recent page, so this is
+        // a quick narrowing, not a server query.
+        var q = query.trim().toLowerCase();
+        var shown = state.files.filter(function (f) {
+            if (kind !== 'all' && f.kind !== kind) {
+                return false;
+            }
+            if (q && (f.name || '').toLowerCase().indexOf(q) < 0) {
+                return false;
+            }
+            return true;
         });
 
         var body;
@@ -3882,18 +4011,57 @@
             ]);
         } else if (!state.files.length) {
             body = e(EmptyState, {icon: 'paperclip', title: 'No files yet'},
-                'Files shared in channels you are a member of will appear here.');
+                'Files shared in channels you are a member of will appear here. Use Upload to add one to the channel you are viewing.');
         } else if (!shown.length) {
             body = e(EmptyState, {icon: 'paperclip', title: 'No matching files'},
-                'No ' + kind + ' files in the most recent ' + state.files.length + '.');
+                q ? 'No files match “' + query.trim() + '” in the most recent ' + state.files.length + '.'
+                    : 'No ' + kind + ' files in the most recent ' + state.files.length + '.');
         } else {
             body = shown.map(function (f) {
                 return e(FileRow, {key: f.id, file: f});
             });
         }
 
+        var upChannel = currentChannelForUpload();
+        var uploadLabel = upChannel && upChannel.display_name ? 'Upload to ' + upChannel.display_name : 'Upload a file to this channel';
+
         return e('div', {className: 'hw hw-files'}, [
             e(Toolbar, {key: 'bar', icon: 'paperclip', title: 'Files'}, [
+                e('input', {
+                    key: 'file',
+                    ref: fileInputRef,
+                    type: 'file',
+                    style: {display: 'none'},
+                    onChange: function (ev) {
+                        var f = ev.target.files && ev.target.files[0];
+                        ev.target.value = '';
+                        doUpload(f);
+                    },
+                }),
+                e('input', {
+                    key: 'search',
+                    className: 'hw-input hw-file-search',
+                    type: 'search',
+                    placeholder: 'Search files…',
+                    'aria-label': 'Search files by name',
+                    value: query,
+                    onChange: function (ev) {
+                        setQuery(ev.target.value);
+                    },
+                }),
+                e(Button, {
+                    key: 'upload', kind: 'secondary', icon: 'upload',
+                    'aria-label': uploadLabel, title: uploadLabel,
+                    disabled: up.busy,
+                    onClick: function () {
+                        if (up.error) {
+                            setUp({busy: false, error: null});
+                        }
+                        if (fileInputRef.current) {
+                            fileInputRef.current.click();
+                        }
+                    },
+                }, up.busy ? 'Uploading…' : 'Upload'),
                 e('select', {
                     key: 'kind',
                     className: 'hw-select',
@@ -3914,6 +4082,10 @@
                     },
                 }, 'Refresh'),
             ]),
+            up.error ? e('div', {key: 'uperr', style: {padding: '8px 12px 0'}}, e(ErrorNote, {}, up.error)) : null,
+            (!state.loading && !state.error && shown.length)
+                ? e('div', {key: 'heading', className: 'hw-files-heading'}, q ? 'Results' : 'Recent Files')
+                : null,
             e('div', {key: 'list', className: 'hw-list'}, body),
             state.hasMore && !state.error ? e('div', {key: 'more', className: 'hw-more'},
                 e(Button, {
@@ -4421,11 +4593,179 @@
         ]);
     }
 
+    // The Add Members picker: choose several of the organization's own people
+    // and add them to a department at once. It lists org members (never the
+    // whole instance -- a department is filled from the org), marks those
+    // already on the team as "On team" and non-selectable, and reports exactly
+    // what happened so a partial failure reads as one. The server is the
+    // authority on every rule here; this dialog only makes the common case
+    // quick and is reachable solely from the org-admin-gated panel.
+    function AddTeamMembersModal(props) {
+        var d = React.useState({loading: true, rows: [], error: null});
+        var st = d[0], set = d[1];
+        var q0 = React.useState('');
+        var query = q0[0], setQuery = q0[1];
+        var s0 = React.useState({});
+        var sel = s0[0], setSel = s0[1];
+        var b = React.useState({busy: false, err: '', note: ''});
+        var act = b[0], setAct = b[1];
+
+        var existing = {};
+        (props.existingIds || []).forEach(function (id) {
+            existing[id] = true;
+        });
+
+        React.useEffect(function () {
+            request('GET', '/orgs/' + props.orgId + '/members').then(function (o) {
+                set({loading: false, rows: (o && o.members) || [], error: null});
+            }).catch(function (err) {
+                set({loading: false, rows: [], error: err.message});
+            });
+        }, [props.orgId]);
+
+        React.useEffect(function () {
+            function onKey(ev) {
+                if (ev.key === 'Escape') {
+                    props.onClose();
+                }
+            }
+            document.addEventListener('keydown', onKey);
+            return function () {
+                document.removeEventListener('keydown', onKey);
+            };
+        }, []);
+
+        function toggle(id) {
+            if (existing[id]) {
+                return;
+            }
+            setSel(function (prev) {
+                var next = {};
+                Object.keys(prev).forEach(function (k) {
+                    next[k] = prev[k];
+                });
+                if (next[id]) {
+                    delete next[id];
+                } else {
+                    next[id] = true;
+                }
+                return next;
+            });
+        }
+
+        var selectedIds = Object.keys(sel).filter(function (id) {
+            return sel[id];
+        });
+
+        function submit() {
+            if (!selectedIds.length) {
+                return;
+            }
+            setAct({busy: true, err: '', note: ''});
+            request('POST', '/orgs/' + props.orgId + '/teams/' + props.team.team_id + '/members', {user_ids: selectedIds})
+                .then(function (o) {
+                    var addedN = (o && o.added) || 0;
+                    var failed = ((o && o.results) || []).filter(function (r) {
+                        return r.status === 'error' || r.status === 'not_in_org';
+                    });
+                    props.onAdded();
+                    if (failed.length) {
+                        // Keep the dialog open so the admin sees who did not go in.
+                        setSel({});
+                        setAct({busy: false, err: '', note: addedN + ' added · ' + failed.length + ' could not be added.'});
+                    } else {
+                        props.onClose(addedN);
+                    }
+                }).catch(function (err) {
+                    setAct({busy: false, err: err.message, note: ''});
+                });
+        }
+
+        var q = query.trim().toLowerCase();
+        var shown = st.rows.filter(function (m) {
+            if (!q) {
+                return true;
+            }
+            return (m.name || '').toLowerCase().indexOf(q) >= 0 ||
+                (m.username || '').toLowerCase().indexOf(q) >= 0;
+        });
+
+        var list;
+        if (st.loading) {
+            list = e(Loading, {label: 'Loading people'});
+        } else if (st.error) {
+            list = e(ErrorNote, {}, st.error);
+        } else if (!shown.length) {
+            list = e(EmptyState, {icon: 'account-multiple-outline', title: q ? 'No matches' : 'No people to add'});
+        } else {
+            list = shown.map(function (m) {
+                var already = existing[m.user_id];
+                var checked = already || Boolean(sel[m.user_id]);
+                return e('label', {key: m.user_id, className: 'hw-pick' + (already ? ' hw-pick-disabled' : '')}, [
+                    e('input', {
+                        key: 'cb', type: 'checkbox', checked: checked, disabled: Boolean(already),
+                        'aria-label': 'Select ' + (m.name || m.username),
+                        onChange: function () {
+                            toggle(m.user_id);
+                        },
+                    }),
+                    e('span', {key: 'n', className: 'hw-pick-name'}, [
+                        e('strong', {key: 'd'}, m.name || m.username),
+                        m.username ? e('span', {key: 'u', style: {opacity: 0.6}}, '  @' + m.username) : null,
+                    ]),
+                    already ? e(Badge, {key: 'a', tone: 'ok'}, 'On team')
+                        : (m.is_guest ? e(Badge, {key: 'g', tone: 'warn'}, 'Guest') : null),
+                ]);
+            });
+        }
+
+        return e('div', {
+            className: 'hw-modal-backdrop',
+            onMouseDown: function (ev) {
+                if (ev.target === ev.currentTarget) {
+                    props.onClose();
+                }
+            },
+        }, e('div', {
+            className: 'hw-modal', role: 'dialog', 'aria-modal': true,
+            'aria-label': 'Add members to ' + (props.team.display_name || props.team.name),
+        }, [
+            e('div', {key: 'h', className: 'hw-modal-head'}, [
+                e(Icon, {key: 'i', name: 'account-multiple-outline'}),
+                e('span', {key: 't'}, 'Add members to ' + (props.team.display_name || props.team.name)),
+                e(Button, {key: 'x', small: true, kind: 'ghost', className: 'hw-spacer', icon: 'close', 'aria-label': 'Close', onClick: function () {
+                    props.onClose();
+                }}),
+            ]),
+            e('div', {key: 'b', className: 'hw-modal-body'}, [
+                e('input', {
+                    key: 'q', className: 'hw-input', placeholder: 'Search people…', 'aria-label': 'Search people',
+                    value: query, onChange: function (ev) {
+                        setQuery(ev.target.value);
+                    },
+                }),
+                act.err ? e(ErrorNote, {key: 'e'}, act.err) : null,
+                act.note ? e('div', {key: 'nt', className: 'hw-form-note'}, act.note) : null,
+                e('div', {key: 'list', style: {marginTop: 6}}, list),
+            ]),
+            e('div', {key: 'f', className: 'hw-modal-foot'}, [
+                e('span', {key: 'c', className: 'hw-form-note'}, 'Selected: ' + selectedIds.length),
+                e(Button, {key: 'cancel', small: true, kind: 'ghost', className: 'hw-spacer', disabled: act.busy, onClick: function () {
+                    props.onClose();
+                }}, 'Cancel'),
+                e(Button, {key: 'add', small: true, disabled: act.busy || !selectedIds.length, onClick: submit},
+                    act.busy ? 'Adding…' : 'Add members'),
+            ]),
+        ]));
+    }
+
     function OrgTeamMembers(props) {
         var d = React.useState({loading: true, rows: [], error: null});
         var st = d[0], set = d[1];
-        var b = React.useState({busy: false, err: ''});
+        var b = React.useState({busy: false, err: '', msg: ''});
         var act = b[0], setAct = b[1];
+        var p0 = React.useState(false);
+        var picking = p0[0], setPicking = p0[1];
         var load = React.useCallback(function () {
             set({loading: true, rows: [], error: null});
             request('GET', '/orgs/' + props.orgId + '/teams/' + props.team.team_id + '/members').then(function (o) {
@@ -4460,12 +4800,37 @@
                 }}, m.team_admin ? 'Remove admin' : 'Make admin'),
             ]);
         });
+        var existingIds = st.rows.map(function (m) {
+            return m.user_id;
+        });
+        var titleText = (props.team.display_name || props.team.name) +
+            (st.loading ? '' : ' · Members (' + st.rows.length + ')');
         return e('div', {className: 'hw-list hw-fade', style: {padding: '12px'}}, [
-            e(Toolbar, {key: 'bar', icon: 'account-group-outline', title: props.team.display_name || props.team.name},
-                e(Button, {key: 'back', small: true, kind: 'ghost', icon: 'arrow-left', className: 'hw-spacer', onClick: props.onBack}, 'Back')),
+            e(Toolbar, {key: 'bar', icon: 'account-group-outline', title: titleText}, [
+                e(Button, {key: 'add', small: true, icon: 'plus', className: 'hw-spacer', disabled: st.loading,
+                    'aria-label': 'Add members to this team',
+                    onClick: function () {
+                        setAct({busy: false, err: '', msg: ''});
+                        setPicking(true);
+                    }}, 'Add Members'),
+                e(Button, {key: 'back', small: true, kind: 'ghost', icon: 'arrow-left', onClick: props.onBack}, 'Back'),
+            ]),
             act.err ? e(ErrorNote, {key: 'e'}, act.err) : null,
+            act.msg ? e('div', {key: 'm', className: 'hw-form-note'}, act.msg) : null,
             st.loading ? e(Loading, {key: 'l', label: 'Loading team'}) :
                 (st.rows.length ? e('div', {key: 'list'}, rows) : e(EmptyState, {key: 'empty', title: 'No members'})),
+            picking ? e(AddTeamMembersModal, {
+                key: 'modal', orgId: props.orgId, team: props.team, existingIds: existingIds,
+                onAdded: function () {
+                    load();
+                },
+                onClose: function (addedN) {
+                    setPicking(false);
+                    if (addedN) {
+                        setAct({busy: false, err: '', msg: addedN + (addedN === 1 ? ' member' : ' members') + ' added.'});
+                    }
+                },
+            }) : null,
         ]);
     }
 

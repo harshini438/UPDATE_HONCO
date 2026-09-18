@@ -156,6 +156,7 @@ func (p *Plugin) newRouter() *mux.Router {
 	api.HandleFunc("/orgs/{org_id}/teams/create", p.handleCreateOrgTeam).Methods(http.MethodPost)
 	api.HandleFunc("/orgs/{org_id}/teams/{team_id}", p.handleUnmapTeam).Methods(http.MethodDelete)
 	api.HandleFunc("/orgs/{org_id}/teams/{team_id}/members", p.handleListOrgTeamMembers).Methods(http.MethodGet)
+	api.HandleFunc("/orgs/{org_id}/teams/{team_id}/members", p.handleAddOrgTeamMembers).Methods(http.MethodPost)
 	api.HandleFunc("/orgs/{org_id}/teams/{team_id}/admins/{user_id}", p.handleSetTeamAdmin).Methods(http.MethodPost)
 	api.HandleFunc("/orgs/{org_id}/teams/{team_id}/admins/{user_id}", p.handleRemoveTeamAdmin).Methods(http.MethodDelete)
 	api.HandleFunc("/orgs/{org_id}/members", p.handleListOrgMembers).Methods(http.MethodGet)

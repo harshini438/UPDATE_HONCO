@@ -195,3 +195,94 @@ func (p *Plugin) handleRemoveTeamAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"team_id": teamID, "user_id": targetID, "team_admin": false})
 }
+
+type addTeamMembersRequest struct {
+	UserIDs []string `json:"user_ids"`
+}
+
+// addTeamMemberResult is one row of the add-members outcome, so the caller can
+// tell a partial failure apart from a full one and say exactly who was added.
+type addTeamMemberResult struct {
+	UserID string `json:"user_id"`
+	Status string `json:"status"` // added | already_member | not_in_org | error
+	Error  string `json:"error,omitempty"`
+}
+
+// handleAddOrgTeamMembers adds one or more existing organization members to a
+// department (a Mattermost team) in a single operation.
+//
+// Org admins only, and only for a team in their org (requireOrgTeam). Every
+// user must already belong to THIS organization: a department is filled from
+// the org's own people, never used to pull a stranger in from elsewhere on the
+// instance. Membership itself stays Mattermost's native TeamMembers -- Honco
+// adds no membership table. Adding someone who is already on the team is a
+// no-op reported as "already_member", not an error and never a duplicate (the
+// team_user pair is unique in Mattermost), so the whole request is safe to
+// retry and one bad id never sinks the rest.
+func (p *Plugin) handleAddOrgTeamMembers(w http.ResponseWriter, r *http.Request) {
+	orgID := mux.Vars(r)["org_id"]
+	teamID := mux.Vars(r)["team_id"]
+	if _, ok := p.requireOrgTeam(w, r, orgID, teamID); !ok {
+		return
+	}
+	var req addTeamMembersRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if len(req.UserIDs) == 0 {
+		p.writeErr(w, http.StatusBadRequest, "user_ids is required", nil)
+		return
+	}
+	if len(req.UserIDs) > 200 {
+		p.writeErr(w, http.StatusBadRequest, "too many users in one request (max 200)", nil)
+		return
+	}
+
+	results := make([]addTeamMemberResult, 0, len(req.UserIDs))
+	added := 0
+	seen := map[string]bool{}
+	for _, uid := range req.UserIDs {
+		if uid == "" || seen[uid] {
+			continue
+		}
+		seen[uid] = true
+		res := addTeamMemberResult{UserID: uid}
+		if !model.IsValidId(uid) {
+			res.Status = "error"
+			res.Error = "invalid user id"
+			results = append(results, res)
+			continue
+		}
+		// Only the org's own members may be added to the org's team.
+		userOrg, oerr := p.store.ActiveOrgForUser(uid)
+		if oerr != nil {
+			res.Status = "error"
+			res.Error = "could not verify organization membership"
+			results = append(results, res)
+			continue
+		}
+		if userOrg != orgID {
+			res.Status = "not_in_org"
+			res.Error = "not a member of this organization"
+			results = append(results, res)
+			continue
+		}
+		// Already on the team is success, not a duplicate.
+		if tm, gerr := p.API.GetTeamMember(teamID, uid); gerr == nil && tm != nil && tm.DeleteAt == 0 {
+			res.Status = "already_member"
+			results = append(results, res)
+			continue
+		}
+		if _, cerr := p.API.CreateTeamMember(teamID, uid); cerr != nil {
+			res.Status = "error"
+			res.Error = "could not add to team"
+			p.client.Log.Warn("honco org: add team member failed", "team_id", teamID, "user_id", uid, "err", cerr.Error())
+			results = append(results, res)
+			continue
+		}
+		res.Status = "added"
+		added++
+		results = append(results, res)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"team_id": teamID, "added": added, "results": results})
+}
